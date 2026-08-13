@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة صالة الألعاب</title>
+    
+    <style>
+        :root {
+            --bg-dark: #050510;
+            --card-glass: rgba(15, 15, 30, 0.75);
+            --text-main: #e0eaff;
+            --neon-green: #00b7ff;
+            --neon-blue: #33ff00;
+            --neon-red: #ff1053;
+            --neon-purple: #b026ff;
+            --neon-yellow: #ffea00;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            direction: rtl;
+            background-image: radial-gradient(circle at 50% 50%, #111122 0%, #050510 100%);
+            min-height: 100vh;
+        }
+
+        .main-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--neon-purple);
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 20px -10px rgba(176, 38, 255, 0.3);
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        h1 {
+            text-shadow: 0 0 10px var(--neon-purple), 0 0 20px var(--neon-purple);
+            margin: 0;
+            font-size: 1.8rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr) !important;
+            gap: 15px;
+            padding: 5px;
+        }
+
+        .device-card {
+            background-color: var(--card-glass);
+            border-radius: 12px;
+            padding: 12px 8px;
+            text-align: center;
+            border: 2px solid #333;
+            transition: all 0.3s ease-in-out;
+            user-select: none;
+            position: relative;
+            backdrop-filter: blur(10px);
+        }
+
+        .device-card:hover { transform: translateY(-4px) scale(1.02); }
+
+        .device-card.vacant { border-color: var(--neon-green); box-shadow: 0 0 12px rgba(0, 255, 204, 0.25), inset 0 0 8px rgba(0, 255, 204, 0.1); }
+        .device-card.vacant h3 { color: var(--neon-green); text-shadow: 0 0 8px var(--neon-green); margin: 0; }
+        .device-card.open, .device-card.timed { border-color: var(--neon-blue); box-shadow: 0 0 18px rgba(0, 229, 255, 0.4), inset 0 0 12px rgba(0, 229, 255, 0.2); }
+        .device-card.open h3, .device-card.timed h3 { color: var(--neon-blue); text-shadow: 0 0 8px var(--neon-blue); margin: 0; }
+        .device-card.locked { border-color: var(--neon-red); box-shadow: 0 0 18px rgba(255, 16, 83, 0.5), inset 0 0 12px rgba(255, 16, 83, 0.3); animation: neon-pulse 1.5s infinite alternate; }
+        .device-card.locked h3 { color: var(--neon-red); text-shadow: 0 0 8px var(--neon-red); margin: 0; }
+
+        @keyframes neon-pulse { from { box-shadow: 0 0 8px rgba(255, 16, 83, 0.4); } to { box-shadow: 0 0 22px rgba(255, 16, 83, 0.8); } }
+
+        .device-icon { margin: 8px 0; }
+        .device-icon img {
+            width: 65px;
+            height: 65px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 8px rgba(0, 0, 0, 0.5);
+            transition: transform 0.2s;
+        }
+        .device-icon img:hover {
+            transform: scale(1.05);
+        }
+
+        .device-time { font-size: 1.1rem; font-weight: bold; font-family: 'Courier New', Courier, monospace; margin: 8px 0; background: rgba(0, 0, 0, 0.6); padding: 6px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); }
+        .card-actions { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+
+        .btn { padding: 6px 10px; border: 1px solid transparent; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; background: transparent; color: white; }
+        .btn-primary { border-color: var(--neon-blue); box-shadow: 0 0 8px rgba(0, 229, 255, 0.3); }
+        .btn-primary:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 15px var(--neon-blue); }
+        .btn-secondary { border-color: var(--neon-purple); box-shadow: 0 0 8px rgba(176, 38, 255, 0.3); }
+        .btn-secondary:hover { background: var(--neon-purple); color: #000; box-shadow: 0 0 15px var(--neon-purple); }
+        .btn-danger { border-color: var(--neon-red); box-shadow: 0 0 8px rgba(255, 16, 83, 0.3); }
+        .btn-danger:hover { background: var(--neon-red); color: #000; box-shadow: 0 0 15px var(--neon-red); }
+        .btn-warning { border-color: var(--neon-yellow); box-shadow: 0 0 8px rgba(255, 234, 0, 0.3); }
+        .btn-warning:hover { background: var(--neon-yellow); color: #000; box-shadow: 0 0 15px var(--neon-yellow); }
+        .btn-success { border-color: var(--neon-green); box-shadow: 0 0 8px rgba(0, 255, 204, 0.3); }
+        .btn-success:hover { background: var(--neon-green); color: #000; box-shadow: 0 0 15px var(--neon-green); }
+
+        dialog { background-color: rgba(10, 10, 20, 0.95); color: var(--text-main); border: 2px solid var(--neon-blue); border-radius: 12px; padding: 20px; width: 400px; max-width: 90vw; box-shadow: 0 0 25px rgba(0, 229, 255, 0.3); backdrop-filter: blur(15px); }
+        dialog::backdrop { background-color: rgba(0, 0, 0, 0.8); }
+
+        .modal-body { display: flex; flex-direction: column; gap: 12px; margin: 15px 0; }
+        input[type="text"], input[type="number"], input[type="file"] { padding: 8px; border-radius: 6px; border: 1px solid var(--neon-purple); background: #000; color: var(--neon-blue); font-size: 1rem; outline: none; }
+        
+        .time-input-group, .add-product-group { display: flex; gap: 10px; align-items: center; }
+        .time-input-group input, .add-product-group input { flex: 1; text-align: center; }
+
+        .bill-details { background: rgba(0, 0, 0, 0.5); padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1); line-height: 1.8; font-size: 1rem; }
+        .product-item { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 8px; border: 1px solid #333; }
+        
+        .hidden { display: none !important; }
+
+        progress { width: 100%; height: 20px; accent-color: var(--neon-green); }
+
+        @media (max-width: 1200px) {
+            .grid-container { grid-template-columns: repeat(7, minmax(120px, 1fr)) !important; overflow-x: auto; }
+        }
+        @media (max-width: 900px) {
+            .grid-container { grid-template-columns: repeat(4, 1fr) !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="main-header">
+        <h1>🎮 نظام إدارة صالة الألعاب</h1>
+        <div class="header-actions">
+            <button class="btn btn-primary" onclick="window.openVideoUploadModal()">رفع فيديو القفل 🎬</button>
+            <button class="btn btn-warning" onclick="window.openManageProductsModal()">إدارة المنتجات 🍔</button>
+            <button id="multiSelectBtn" class="btn btn-secondary" onclick="window.toggleMultiSelectMode()">إدارة جماعية ☑️</button>
+            <button id="bulkActionBtn" class="btn btn-danger hidden" onclick="window.openBulkModal()">إنهاء المحددة (0)</button>
+        </div>
+    </header>
+
+    <main id="devicesGrid" class="grid-container"></main>
+
+    <!-- نافذة رفع فيديو قفل الشاشات -->
+    <dialog id="videoUploadModal">
+        <h2>رفع فيديو قفل الشاشات</h2>
+        <p style="font-size: 0.85rem; color: #aaa; margin-top: -5px;">اختر فيديو من جهازك ليتم إرساله وتنزيله على حواسب العميل وتخزينه محلياً لديهم.</p>
+        <div class="modal-body">
+            <input type="file" id="videoFileInput" accept="video/mp4,video/webm,video/mkv">
+            <div id="uploadProgressContainer" class="hidden">
+                <progress id="uploadProgressBar" value="0" max="100"></progress>
+                <span id="uploadStatusText" style="font-size: 0.85rem; color: var(--neon-blue); display: block; text-align: center; margin-top: 5px;">جاري الرفع... 0%</span>
+            </div>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-success" onclick="window.uploadVideoToFirebase()" style="flex: 1;">رفع وإرسال للعملاء 🚀</button>
+            <button class="btn btn-danger" onclick="window.closeModal('videoUploadModal')">إغلاق</button>
+        </div>
+    </dialog>
+
+    <!-- 1. نافذة بدء اللعب -->
+    <dialog id="startModal">
+        <h2>اختيار نوع الجلسة</h2>
+        <div class="modal-body">
+            <button class="btn btn-primary" onclick="window.startSession('open')">وقت مفتوح ♾️</button>
+            <hr style="border-color: rgba(255,255,255,0.1); width: 100%;">
+            <div class="time-input-group">
+                <input type="number" id="minutesInput" placeholder="عدد الدقائق (مثال: 60)" min="1">
+                <button class="btn btn-secondary" onclick="window.startSession('timed')">تأكيد الوقت ⏱️</button>
+            </div>
+        </div>
+        <button class="btn btn-danger" onclick="window.closeModal('startModal')" style="width: 100%;">إلغاء</button>
+    </dialog>
+
+    <!-- 2. نافذة إضافة للمشتريات -->
+    <dialog id="purchasesModal">
+        <h2>إضافة مشتريات للجهاز</h2>
+        <div class="modal-body" id="dynamicPurchasesList" style="max-height: 300px; overflow-y: auto;"></div>
+        <button class="btn btn-danger" onclick="window.closeModal('purchasesModal')" style="width: 100%;">إغلاق</button>
+    </dialog>
+
+    <!-- 3. نافذة إدارة المنتجات -->
+    <dialog id="manageProductsModal">
+        <h2>إدارة المنتجات والمأكولات</h2>
+        <div class="modal-body">
+            <div class="add-product-group">
+                <input type="text" id="newProdName" placeholder="اسم المنتج (مثال: شاي)">
+                <input type="number" id="newProdPrice" placeholder="السعر">
+                <button class="btn btn-success" onclick="window.addNewProduct()">إضافة ➕</button>
+            </div>
+            <hr style="border-color: rgba(255,255,255,0.1); width: 100%;">
+            <div id="productsManageList" style="display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto;"></div>
+        </div>
+        <button class="btn btn-danger" onclick="window.closeModal('manageProductsModal')" style="width: 100%;">إغلاق</button>
+    </dialog>
+
+    <!-- 4. نافذة الحساب -->
+    <dialog id="billModal">
+        <h2>تفاصيل الحساب</h2>
+        <div id="billDetails" class="bill-details"></div>
+        <div class="modal-body">
+            <button id="stopSessionBtn" class="btn btn-danger hidden">إيقاف وقفل الشاشة 🛑</button>
+            <button class="btn btn-primary" onclick="window.clearAndPaySession()">تصفير وتفريغ الجهاز 🧹</button>
+        </div>
+        <button class="btn btn-secondary" onclick="window.closeModal('billModal')" style="width: 100%;">إغلاق</button>
+    </dialog>
+
+    <!-- 5. نافذة الإنهاء الجماعي -->
+    <dialog id="bulkModal">
+        <h2>إيقاف الأجهزة المحددة</h2>
+        <p>هل أنت متأكد من إيقاف وقفل كافة الأجهزة المحددة وإضافة أوقاتها للحساب؟</p>
+        <div class="modal-body">
+            <button class="btn btn-danger" onclick="window.executeBulkStop()">تأكيد الإيقاف الجماعي 🛑</button>
+        </div>
+        <button class="btn btn-secondary" onclick="window.closeModal('bulkModal')" style="width: 100%;">إلغاء</button>
+    </dialog>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+        import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDEof31VeMcWPIcPd6FSOzxYenOnLjEfgA",
+            authDomain: "ak-system-c6828.firebaseapp.com",
+            databaseURL: "https://ak-system-c6828-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "ak-system-c6828",
+            storageBucket: "ak-system-c6828.firebasestorage.app",
+            messagingSenderId: "228844007944",
+            appId: "1:228844007944:web:0ee9cb72787dcf0d6097bd",
+            measurementId: "G-1L3G8DGDZC"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const storage = getStorage(app);
+
+        let devices = [];
+        let products = [];
+        let currentSelectedDeviceId = null;
+        let isMultiSelectMode = false;
+        let selectedDeviceIds = new Set();
+
+        const RATES = { PC: 1500, PS5: 3000 };
+
+        // === 0. إدارة رفع فيديو قفل الشاشة ===
+        window.openVideoUploadModal = () => document.getElementById('videoUploadModal').showModal();
+
+        window.uploadVideoToFirebase = () => {
+            const fileInput = document.getElementById('videoFileInput');
+            const file = fileInput.files[0];
+            if (!file) return alert("يرجى اختيار ملف فيديو أولاً!");
+
+            const progressContainer = document.getElementById('uploadProgressContainer');
+            const progressBar = document.getElementById('uploadProgressBar');
+            const statusText = document.getElementById('uploadStatusText');
+
+            progressContainer.classList.remove('hidden');
+
+            const videoPath = `lock_videos/lock_screen_${Date.now()}.mp4`;
+            const videoStorageReference = storageRef(storage, videoPath);
+            const uploadTask = uploadBytesResumable(videoStorageReference, file);
+
+            uploadTask.on('state_changed', 
+                (snapshot) => {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    progressBar.value = progress;
+                    statusText.innerText = `جاري الرفع... ${Math.round(progress)}%`;
+                }, 
+                (error) => {
+                    alert("حدث خطأ أثناء رفع الفيديو: " + error.message);
+                    progressContainer.classList.add('hidden');
+                }, 
+                () => {
+                    getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+                        update(ref(db, 'globalSettings'), {
+                            lockVideoUrl: downloadURL,
+                            updatedAt: Date.now()
+                        }).then(() => {
+                            alert("تم رفع الفيديو وتحديث النظام بنجاح! ستقوم الأجهزة بتنزيله وتخزينه تلقائياً.");
+                            progressContainer.classList.add('hidden');
+                            window.closeModal('videoUploadModal');
+                            fileInput.value = '';
+                        });
+                    });
+                }
+            );
+        };
+
+        // === 1. جلب وإدارة المنتجات (المشتريات) ===
+        const productsRef = ref(db, 'products');
+        onValue(productsRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                initializeDefaultProducts();
+            } else {
+                products = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+                renderProductsInManageModal();
+                renderProductsInPurchasesModal();
+            }
+        });
+
+        function initializeDefaultProducts() {
+            const initial = {
+                p1: { name: 'ماء', price: 500 },
+                p2: { name: 'بيبسي', price: 1000 },
+                p3: { name: 'شيبس', price: 1000 },
+                p4: { name: 'اندومي', price: 1500 }
+            };
+            set(ref(db, 'products'), initial);
+        }
+
+        window.openManageProductsModal = () => document.getElementById('manageProductsModal').showModal();
+
+        window.addNewProduct = () => {
+            const name = document.getElementById('newProdName').value;
+            const price = parseInt(document.getElementById('newProdPrice').value);
+            if (!name || isNaN(price)) return alert("يرجى إدخال اسم المنتج والسعر بشكل صحيح");
+            push(ref(db, 'products'), { name, price });
+            document.getElementById('newProdName').value = '';
+            document.getElementById('newProdPrice').value = '';
+        };
+
+        window.deleteProduct = (id) => {
+            if (confirm("هل أنت متأكد من حذف هذا المنتج؟")) remove(ref(db, `products/${id}`));
+        };
+
+        window.editProduct = (id) => {
+            const prod = products.find(p => p.id === id);
+            const newName = prompt("تعديل اسم المنتج:", prod.name);
+            if (!newName) return;
+            const newPrice = prompt("تعديل السعر:", prod.price);
+            if (!newPrice || isNaN(parseInt(newPrice))) return alert("سعر غير صالح");
+
+            update(ref(db, `products/${id}`), { name: newName, price: parseInt(newPrice) });
+        };
+
+        function renderProductsInManageModal() {
+            const list = document.getElementById('productsManageList');
+            list.innerHTML = '';
+            products.forEach(p => {
+                list.innerHTML += `
+                    <div class="product-item">
+                        <div><strong>${p.name}</strong> - <span style="color:var(--neon-green)">${p.price} د.ع</span></div>
+                        <div style="display:flex; gap:5px;">
+                            <button class="btn btn-secondary" style="padding:4px 8px;" onclick="window.editProduct('${p.id}')">✏️</button>
+                            <button class="btn btn-danger" style="padding:4px 8px;" onclick="window.deleteProduct('${p.id}')">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function renderProductsInPurchasesModal() {
+            const list = document.getElementById('dynamicPurchasesList');
+            list.innerHTML = '';
+            products.forEach(p => {
+                list.innerHTML += `
+                    <button class="btn btn-secondary" style="text-align: right; font-size: 1.1rem; padding: 10px;" 
+                        onclick="window.addPurchase('${p.name}', ${p.price})">
+                        🛒 ${p.name} <span style="float:left; color:var(--neon-yellow)">${p.price} د.ع</span>
+                    </button>
+                `;
+            });
+            if(products.length === 0) {
+                list.innerHTML = `<p style="text-align:center;">لا توجد منتجات. أضفها من "إدارة المنتجات".</p>`;
+            }
+        }
+
+        // === 2. جلب الأجهزة والواجهة الأساسية ===
+        const devicesRef = ref(db, 'devices');
+        onValue(devicesRef, (snapshot) => {
+            const data = snapshot.val();
+            if (!data) {
+                initializeDevicesDatabase();
+            } else {
+                let rawDevices = Object.keys(data).map(key => ({
+                    id: key,
+                    ...data[key],
+                    purchases: data[key].purchases || [],
+                    accumulatedTimePrice: data[key].accumulatedTimePrice || 0
+                }));
+
+                devices = rawDevices.sort((a, b) => {
+                    if (a.type !== b.type) return a.type === 'PC' ? -1 : 1;
+                    const numA = parseInt(a.id.replace(/\D/g, '')) || 0;
+                    const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
+                    return numA - numB;
+                });
+
+                renderDevices();
+            }
+        });
+
+        function initializeDevicesDatabase() {
+            const initialDevices = {};
+            for (let i = 1; i <= 14; i++) {
+                initialDevices[`PC${i}`] = { name: `PC ${i}`, type: 'PC', status: 'vacant', startTime: null, durationLimit: null, purchases: [], accumulatedTimePrice: 0 };
+            }
+            for (let i = 1; i <= 4; i++) { 
+                initialDevices[`PS5${i}`] = { name: `بلي ${i}`, type: 'PS5', status: 'vacant', startTime: null, durationLimit: null, purchases: [], accumulatedTimePrice: 0 };
+            }
+            set(ref(db, 'devices'), initialDevices);
+        }
+
+        function renderDevices() {
+            const grid = document.getElementById('devicesGrid');
+            grid.innerHTML = '';
+
+            devices.forEach(device => {
+                const card = document.createElement('div');
+                card.className = `device-card ${device.status}`;
+                
+                card.ondblclick = () => {
+                    if ((device.status === 'vacant' || device.status === 'locked') && !isMultiSelectMode) {
+                        window.openStartModal(device.id);
+                    }
+                };
+
+                const checkboxHTML = isMultiSelectMode ? 
+                    `<div class="checkbox-container" style="position: absolute; top: 10px; right: 10px; z-index: 2;">
+                        <input type="checkbox" style="transform: scale(1.5);" onchange="toggleSelectDevice('${device.id}')" ${selectedDeviceIds.has(device.id) ? 'checked' : ''}>
+                     </div>` : '';
+
+                // استخدام الصور بدلاً من الرموز التعبيرية
+                const iconHTML = device.type === 'PC' 
+                    ? `<img src="pc-pic.png" alt="PC">` 
+                    : `<img src="ps5-pic.png" alt="PS5">`;
+
+                card.innerHTML = `
+                    ${checkboxHTML}
+                    <h3>${device.name}</h3>
+                    <div class="device-icon">${iconHTML}</div>
+                    <div class="device-time" id="time-${device.id}">00:00:00</div>
+                    <div class="card-actions">
+                        <button class="btn btn-secondary" onclick="window.openPurchasesModal('${device.id}')">🛒</button>
+                        <button class="btn btn-primary" onclick="window.openBillModal('${device.id}')">🧾</button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // === 3. تحديث الوقت ===
+        setInterval(() => {
+            const now = Date.now();
+            devices.forEach(device => {
+                const timeEl = document.getElementById(`time-${device.id}`);
+                if (!timeEl) return;
+
+                if ((device.status === 'open' || device.status === 'timed') && device.startTime) {
+                    const timeDiffSeconds = Math.floor((now - device.startTime) / 1000);
+
+                    if (device.status === 'open') {
+                        timeEl.innerText = formatTime(timeDiffSeconds);
+                    } else if (device.status === 'timed') {
+                        const limitSeconds = device.durationLimit * 60;
+                        const remainingSeconds = limitSeconds - timeDiffSeconds;
+
+                        if (remainingSeconds <= 0) {
+                            timeEl.innerText = "00:00:00";
+                            lockExpiredDevice(device);
+                        } else {
+                            timeEl.innerText = formatTime(remainingSeconds);
+                        }
+                    }
+                } else if (device.status === 'locked') {
+                    timeEl.innerText = "مقفل 🔒";
+                } else {
+                    timeEl.innerText = "00:00:00";
+                }
+            });
+        }, 1000);
+
+        function lockExpiredDevice(device) {
+            if (device.status === 'locked') return;
+            const sessionPrice = (device.durationLimit / 60) * RATES[device.type];
+            const newAccumulated = (device.accumulatedTimePrice || 0) + sessionPrice;
+            update(ref(db, `devices/${device.id}`), { status: 'locked', startTime: null, durationLimit: null, accumulatedTimePrice: newAccumulated });
+        }
+
+        function formatTime(totalSeconds) {
+            const h = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+            const m = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+            const s = String(totalSeconds % 60).padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        function roundToNearest50(amount) { return Math.round(amount / 50) * 50; }
+
+        // === 4. النوافذ والعمليات ===
+        window.closeModal = (modalId) => document.getElementById(modalId).close();
+
+        window.openStartModal = (id) => {
+            currentSelectedDeviceId = id;
+            document.getElementById('startModal').showModal();
+        };
+
+        window.startSession = (type) => {
+            const device = devices.find(d => d.id === currentSelectedDeviceId);
+            let limit = null;
+
+            if (type === 'timed') {
+                limit = parseInt(document.getElementById('minutesInput').value);
+                if (!limit || limit <= 0) return alert("يرجى إدخال عدد دقائق صحيح");
+            }
+
+            let additionalAccumulated = 0;
+            if (device.status === 'open' && device.startTime) {
+                const playedMinutes = (Date.now() - device.startTime) / 60000;
+                additionalAccumulated = (playedMinutes / 60) * RATES[device.type];
+            }
+
+            update(ref(db, `devices/${currentSelectedDeviceId}`), {
+                status: type, startTime: Date.now(), durationLimit: limit,
+                accumulatedTimePrice: (device.accumulatedTimePrice || 0) + additionalAccumulated
+            });
+            window.closeModal('startModal');
+        };
+
+        window.openPurchasesModal = (id) => {
+            currentSelectedDeviceId = id;
+            document.getElementById('purchasesModal').showModal();
+        };
+
+        window.addPurchase = (itemName, price) => {
+            const device = devices.find(d => d.id === currentSelectedDeviceId);
+            const currentPurchases = device.purchases || [];
+            currentPurchases.push({ name: itemName, price: price });
+            update(ref(db, `devices/${currentSelectedDeviceId}`), { purchases: currentPurchases });
+            
+            const btnList = document.getElementById('dynamicPurchasesList');
+            const originalBg = btnList.style.backgroundColor;
+            btnList.style.backgroundColor = "rgba(0, 255, 204, 0.2)";
+            setTimeout(() => btnList.style.backgroundColor = originalBg, 300);
+        };
+
+        window.openBillModal = (id) => {
+            currentSelectedDeviceId = id;
+            const device = devices.find(d => d.id === id);
+            const detailsDiv = document.getElementById('billDetails');
+
+            let currentSessionPrice = 0;
+            let playedMinutesText = "";
+            
+            if (device.startTime) {
+                if (device.status === 'timed') {
+                    currentSessionPrice = (device.durationLimit / 60) * RATES[device.type];
+                    playedMinutesText = `${device.durationLimit} دقيقة (محدد)`;
+                } else if (device.status === 'open') {
+                    const playedMins = (Date.now() - device.startTime) / 60000;
+                    currentSessionPrice = (playedMins / 60) * RATES[device.type];
+                    playedMinutesText = `${Math.ceil(playedMins)} دقيقة (مفتوح)`;
+                }
+            }
+
+            const roundedTimePrice = roundToNearest50((device.accumulatedTimePrice || 0) + currentSessionPrice);
+            const purchasesTotal = device.purchases.reduce((sum, p) => sum + p.price, 0);
+            const finalTotal = roundedTimePrice + purchasesTotal;
+
+            let purchasesListText = device.purchases.length > 0 
+                ? device.purchases.map(p => `<li>${p.name} - ${p.price}</li>`).join('') 
+                : "لا توجد مشتريات";
+
+            detailsDiv.innerHTML = `
+                <p>الجهاز: <strong>${device.name}</strong> <span style="color:var(--neon-blue)">(${device.type})</span></p>
+                <p>الحالة: <strong>${device.status === 'vacant' ? 'شاغر 🟢' : device.status === 'locked' ? 'مقفل 🔴' : 'شغال 🔵'}</strong></p>
+                ${device.startTime ? `<p>الجلسة الحالية: ${playedMinutesText}</p>` : ''}
+                <p>حساب الوقت: ${roundedTimePrice} د.ع</p>
+                <hr style="border-color: rgba(255,255,255,0.1);">
+                <p>المشتريات (${purchasesTotal} د.ع):</p>
+                <ul style="margin: 0; padding-right: 20px; font-size: 0.9em; color: var(--neon-yellow);">
+                    ${purchasesListText}
+                </ul>
+                <hr style="border-color: rgba(255,255,255,0.1);">
+                <h3 style="color: var(--neon-green)">المجموع الكلي: ${finalTotal} د.ع</h3>
+            `;
+
+            const stopBtn = document.getElementById('stopSessionBtn');
+            if (device.status === 'open' || device.status === 'timed') {
+                stopBtn.classList.remove('hidden');
+                stopBtn.innerText = 'إيقاف وقفل الشاشة 🛑';
+                stopBtn.onclick = window.stopActiveSession;
+            } else if (device.status === 'locked' || device.status === 'vacant') {
+                stopBtn.classList.remove('hidden');
+                stopBtn.innerText = 'بدء لعب جديد 🎮';
+                stopBtn.onclick = () => { window.closeModal('billModal'); window.openStartModal(device.id); };
+            }
+
+            document.getElementById('billModal').showModal();
+        };
+
+        window.stopActiveSession = () => {
+            const device = devices.find(d => d.id === currentSelectedDeviceId);
+            let sessionPrice = 0;
+            if (device.startTime) {
+                if (device.status === 'timed') sessionPrice = (device.durationLimit / 60) * RATES[device.type];
+                else if (device.status === 'open') sessionPrice = ((Date.now() - device.startTime) / 60000 / 60) * RATES[device.type];
+            }
+            update(ref(db, `devices/${currentSelectedDeviceId}`), {
+                status: 'locked', startTime: null, durationLimit: null,
+                accumulatedTimePrice: (device.accumulatedTimePrice || 0) + sessionPrice
+            });
+            window.closeModal('billModal');
+        };
+
+        window.clearAndPaySession = () => {
+            update(ref(db, `devices/${currentSelectedDeviceId}`), {
+                status: 'vacant', startTime: null, durationLimit: null, accumulatedTimePrice: 0, purchases: []
+            });
+            window.closeModal('billModal');
+        };
+
+        // === 5. الإدارة الجماعية ===
+        window.toggleMultiSelectMode = () => {
+            isMultiSelectMode = !isMultiSelectMode;
+            selectedDeviceIds.clear();
+            document.getElementById('bulkActionBtn').classList.toggle('hidden', !isMultiSelectMode);
+            document.getElementById('multiSelectBtn').innerText = isMultiSelectMode ? 'إلغاء التحديد' : 'إدارة جماعية ☑️';
+            renderDevices();
+        };
+
+        window.toggleSelectDevice = (id) => {
+            selectedDeviceIds.has(id) ? selectedDeviceIds.delete(id) : selectedDeviceIds.add(id);
+            document.getElementById('bulkActionBtn').innerText = `إنهاء المحددة (${selectedDeviceIds.size})`;
+        };
+
+        window.openBulkModal = () => {
+            if (selectedDeviceIds.size === 0) return alert('لم تقم بتحديد أي جهاز!');
+            document.getElementById('bulkModal').showModal();
+        };
+
+        window.executeBulkStop = () => {
+            const updates = {};
+            selectedDeviceIds.forEach(id => {
+                const device = devices.find(d => d.id === id);
+                if (device.status === 'open' || device.status === 'timed') {
+                    let sessionPrice = 0;
+                    if (device.startTime) {
+                        if (device.status === 'timed') sessionPrice = (device.durationLimit / 60) * RATES[device.type];
+                        else if (device.status === 'open') sessionPrice = ((Date.now() - device.startTime) / 60000 / 60) * RATES[device.type];
+                    }
+                    updates[`devices/${id}/status`] = 'locked';
+                    updates[`devices/${id}/startTime`] = null;
+                    updates[`devices/${id}/durationLimit`] = null;
+                    updates[`devices/${id}/accumulatedTimePrice`] = (device.accumulatedTimePrice || 0) + sessionPrice;
+                }
+            });
+            if (Object.keys(updates).length > 0) update(ref(db, '/'), updates);
+            
+            window.closeModal('bulkModal');
+            window.toggleMultiSelectMode(); 
+        };
+
+    </script>
+</body>
+</html>
