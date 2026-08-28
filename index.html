@@ -111,7 +111,7 @@
         .btn-success { border-color: var(--neon-green); box-shadow: 0 0 8px rgba(0, 255, 204, 0.3); }
         .btn-success:hover { background: var(--neon-green); color: #000; box-shadow: 0 0 15px var(--neon-green); }
 
-        dialog { background-color: rgba(10, 10, 20, 0.95); color: var(--text-main); border: 2px solid var(--neon-blue); border-radius: 12px; padding: 20px; width: 400px; max-width: 90vw; box-shadow: 0 0 25px rgba(0, 229, 255, 0.3); backdrop-filter: blur(15px); }
+        dialog { background-color: rgba(10, 10, 20, 0.95); color: var(--text-main); border: 2px solid var(--neon-blue); border-radius: 12px; padding: 20px; width: 450px; max-width: 90vw; box-shadow: 0 0 25px rgba(0, 229, 255, 0.3); backdrop-filter: blur(15px); }
         dialog::backdrop { background-color: rgba(0, 0, 0, 0.8); }
 
         .modal-body { display: flex; flex-direction: column; gap: 12px; margin: 15px 0; }
@@ -126,6 +126,42 @@
         .hidden { display: none !important; }
 
         progress { width: 100%; height: 20px; accent-color: var(--neon-green); }
+
+        /* تنسيقات الفاتورة الجديدة لتحديد الحسابات */
+        .bill-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s;
+        }
+        .bill-item:hover { background: rgba(0, 229, 255, 0.1); }
+        .bill-item label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            flex: 1;
+            user-select: none;
+        }
+        .bill-item input[type="checkbox"] {
+            transform: scale(1.3);
+            accent-color: var(--neon-blue);
+            cursor: pointer;
+        }
+        .bill-total-row {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: var(--neon-green);
+            text-align: left;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px dashed rgba(255, 255, 255, 0.2);
+        }
 
         @media (max-width: 1200px) {
             .grid-container { grid-template-columns: repeat(7, minmax(120px, 1fr)) !important; overflow-x: auto; }
@@ -202,13 +238,13 @@
         <button class="btn btn-danger" onclick="window.closeModal('manageProductsModal')" style="width: 100%;">إغلاق</button>
     </dialog>
 
-    <!-- 4. نافذة الحساب -->
+    <!-- 4. نافذة الحساب الجديدة المتقدمة -->
     <dialog id="billModal">
         <h2>تفاصيل الحساب</h2>
-        <div id="billDetails" class="bill-details"></div>
+        <div id="billDetails" class="bill-details" style="padding: 10px; background: transparent; border: none;"></div>
         <div class="modal-body">
-            <button id="stopSessionBtn" class="btn btn-danger hidden">إيقاف وقفل الشاشة 🛑</button>
-            <button class="btn btn-primary" onclick="window.clearAndPaySession()">تصفير وتفريغ الجهاز 🧹</button>
+            <button id="stopSessionBtn" class="btn btn-danger hidden">إيقاف الجلسة الحالية 🛑</button>
+            <button class="btn btn-primary" onclick="window.paySelectedItems()">دفع المحدد وتحديث الجهاز 💵</button>
         </div>
         <button class="btn btn-secondary" onclick="window.closeModal('billModal')" style="width: 100%;">إغلاق</button>
     </dialog>
@@ -248,54 +284,54 @@
         let currentSelectedDeviceId = null;
         let isMultiSelectMode = false;
         let selectedDeviceIds = new Set();
+        let currentBillItems = [];
 
         const RATES = { PC: 1500, PS5: 3000 };
 
-        // === 0. إدارة رفع فيديو قفل الشاشة ===
-        window.openVideoUploadModal = () => document.getElementById('videoUploadModal').showModal();
+        // === 0. دوال مساعدة ===
+        
+        // دالة التقريب لأقرب 250 دينار عراقي
+        function roundTo250(amount) {
+            if (amount <= 0) return 0;
+            return Math.ceil(amount / 250) * 250; 
+        }
 
-        window.uploadVideoToFirebase = () => {
-            const fileInput = document.getElementById('videoFileInput');
-            const file = fileInput.files[0];
-            if (!file) return alert("يرجى اختيار ملف فيديو أولاً!");
+        // تحويل الوقت من ميلي ثانية إلى وقت مقروء
+        function formatDateTime(ms) {
+            if (!ms) return 'غير محدد';
+            const d = new Date(ms);
+            let hours = d.getHours();
+            let minutes = d.getMinutes();
+            const ampm = hours >= 12 ? 'م' : 'ص';
+            hours = hours % 12;
+            hours = hours ? hours : 12; 
+            minutes = minutes < 10 ? '0' + minutes : minutes;
+            return `${hours}:${minutes} ${ampm}`;
+        }
 
-            const progressContainer = document.getElementById('uploadProgressContainer');
-            const progressBar = document.getElementById('uploadProgressBar');
-            const statusText = document.getElementById('uploadStatusText');
+        // حفظ جلسة اللعب كبند منفصل في الفاتورة
+        function saveSessionToPast(device, endTime) {
+            let sessionPrice = 0;
+            if (device.status === 'timed') {
+                sessionPrice = (device.durationLimit / 60) * RATES[device.type];
+            } else if (device.status === 'open') {
+                sessionPrice = ((endTime - device.startTime) / 60000 / 60) * RATES[device.type];
+            }
+            
+            const newSession = {
+                startTime: device.startTime,
+                endTime: endTime,
+                price: sessionPrice
+            };
+            
+            const pastSessions = device.pastSessions ? [...device.pastSessions] : [];
+            if (sessionPrice > 0) {
+                pastSessions.push(newSession);
+            }
+            return pastSessions;
+        }
 
-            progressContainer.classList.remove('hidden');
-
-            const videoPath = `lock_videos/lock_screen_${Date.now()}.mp4`;
-            const videoStorageReference = storageRef(storage, videoPath);
-            const uploadTask = uploadBytesResumable(videoStorageReference, file);
-
-            uploadTask.on('state_changed', 
-                (snapshot) => {
-                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                    progressBar.value = progress;
-                    statusText.innerText = `جاري الرفع... ${Math.round(progress)}%`;
-                }, 
-                (error) => {
-                    alert("حدث خطأ أثناء رفع الفيديو: " + error.message);
-                    progressContainer.classList.add('hidden');
-                }, 
-                () => {
-                    getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-                        update(ref(db, 'globalSettings'), {
-                            lockVideoUrl: downloadURL,
-                            updatedAt: Date.now()
-                        }).then(() => {
-                            alert("تم رفع الفيديو وتحديث النظام بنجاح! ستقوم الأجهزة بتنزيله وتخزينه تلقائياً.");
-                            progressContainer.classList.add('hidden');
-                            window.closeModal('videoUploadModal');
-                            fileInput.value = '';
-                        });
-                    });
-                }
-            );
-        };
-
-        // === 1. جلب وإدارة المنتجات (المشتريات) ===
+        // === 1. إدارة المشتريات ===
         const productsRef = ref(db, 'products');
         onValue(productsRef, (snapshot) => {
             const data = snapshot.val();
@@ -319,7 +355,6 @@
         }
 
         window.openManageProductsModal = () => document.getElementById('manageProductsModal').showModal();
-
         window.addNewProduct = () => {
             const name = document.getElementById('newProdName').value;
             const price = parseInt(document.getElementById('newProdPrice').value);
@@ -328,21 +363,15 @@
             document.getElementById('newProdName').value = '';
             document.getElementById('newProdPrice').value = '';
         };
-
-        window.deleteProduct = (id) => {
-            if (confirm("هل أنت متأكد من حذف هذا المنتج؟")) remove(ref(db, `products/${id}`));
-        };
-
+        window.deleteProduct = (id) => { if (confirm("هل أنت متأكد من حذف هذا المنتج؟")) remove(ref(db, `products/${id}`)); };
         window.editProduct = (id) => {
             const prod = products.find(p => p.id === id);
             const newName = prompt("تعديل اسم المنتج:", prod.name);
             if (!newName) return;
             const newPrice = prompt("تعديل السعر:", prod.price);
             if (!newPrice || isNaN(parseInt(newPrice))) return alert("سعر غير صالح");
-
             update(ref(db, `products/${id}`), { name: newName, price: parseInt(newPrice) });
         };
-
         function renderProductsInManageModal() {
             const list = document.getElementById('productsManageList');
             list.innerHTML = '';
@@ -358,7 +387,6 @@
                 `;
             });
         }
-
         function renderProductsInPurchasesModal() {
             const list = document.getElementById('dynamicPurchasesList');
             list.innerHTML = '';
@@ -370,9 +398,7 @@
                     </button>
                 `;
             });
-            if(products.length === 0) {
-                list.innerHTML = `<p style="text-align:center;">لا توجد منتجات. أضفها من "إدارة المنتجات".</p>`;
-            }
+            if(products.length === 0) list.innerHTML = `<p style="text-align:center;">لا توجد منتجات. أضفها من "إدارة المنتجات".</p>`;
         }
 
         // === 2. جلب الأجهزة والواجهة الأساسية ===
@@ -386,6 +412,7 @@
                     id: key,
                     ...data[key],
                     purchases: data[key].purchases || [],
+                    pastSessions: data[key].pastSessions || [],
                     accumulatedTimePrice: data[key].accumulatedTimePrice || 0
                 }));
 
@@ -395,7 +422,6 @@
                     const numB = parseInt(b.id.replace(/\D/g, '')) || 0;
                     return numA - numB;
                 });
-
                 renderDevices();
             }
         });
@@ -403,10 +429,10 @@
         function initializeDevicesDatabase() {
             const initialDevices = {};
             for (let i = 1; i <= 14; i++) {
-                initialDevices[`PC${i}`] = { name: `PC ${i}`, type: 'PC', status: 'vacant', startTime: null, durationLimit: null, purchases: [], accumulatedTimePrice: 0 };
+                initialDevices[`PC${i}`] = { name: `PC ${i}`, type: 'PC', status: 'vacant', startTime: null, durationLimit: null };
             }
             for (let i = 1; i <= 4; i++) { 
-                initialDevices[`PS5${i}`] = { name: `بلي ${i}`, type: 'PS5', status: 'vacant', startTime: null, durationLimit: null, purchases: [], accumulatedTimePrice: 0 };
+                initialDevices[`PS5${i}`] = { name: `بلي ${i}`, type: 'PS5', status: 'vacant', startTime: null, durationLimit: null };
             }
             set(ref(db, 'devices'), initialDevices);
         }
@@ -427,13 +453,10 @@
 
                 const checkboxHTML = isMultiSelectMode ? 
                     `<div class="checkbox-container" style="position: absolute; top: 10px; right: 10px; z-index: 2;">
-                        <input type="checkbox" style="transform: scale(1.5);" onchange="toggleSelectDevice('${device.id}')" ${selectedDeviceIds.has(device.id) ? 'checked' : ''}>
+                        <input type="checkbox" style="transform: scale(1.5);" onchange="window.toggleSelectDevice('${device.id}')" ${selectedDeviceIds.has(device.id) ? 'checked' : ''}>
                      </div>` : '';
 
-                // استخدام الصور بدلاً من الرموز التعبيرية
-                const iconHTML = device.type === 'PC' 
-                    ? `<img src="pc-pic.png" alt="PC">` 
-                    : `<img src="ps5-pic.png" alt="PS5">`;
+                const iconHTML = device.type === 'PC' ? `<img src="pc-pic.png" alt="PC">` : `<img src="ps5-pic.png" alt="PS5">`;
 
                 card.innerHTML = `
                     ${checkboxHTML}
@@ -482,9 +505,10 @@
 
         function lockExpiredDevice(device) {
             if (device.status === 'locked') return;
-            const sessionPrice = (device.durationLimit / 60) * RATES[device.type];
-            const newAccumulated = (device.accumulatedTimePrice || 0) + sessionPrice;
-            update(ref(db, `devices/${device.id}`), { status: 'locked', startTime: null, durationLimit: null, accumulatedTimePrice: newAccumulated });
+            const pastSessions = saveSessionToPast(device, Date.now());
+            update(ref(db, `devices/${device.id}`), { 
+                status: 'locked', startTime: null, durationLimit: null, pastSessions: pastSessions 
+            });
         }
 
         function formatTime(totalSeconds) {
@@ -493,8 +517,6 @@
             const s = String(totalSeconds % 60).padStart(2, '0');
             return `${h}:${m}:${s}`;
         }
-
-        function roundToNearest50(amount) { return Math.round(amount / 50) * 50; }
 
         // === 4. النوافذ والعمليات ===
         window.closeModal = (modalId) => document.getElementById(modalId).close();
@@ -507,21 +529,15 @@
         window.startSession = (type) => {
             const device = devices.find(d => d.id === currentSelectedDeviceId);
             let limit = null;
-
             if (type === 'timed') {
                 limit = parseInt(document.getElementById('minutesInput').value);
                 if (!limit || limit <= 0) return alert("يرجى إدخال عدد دقائق صحيح");
             }
 
-            let additionalAccumulated = 0;
-            if (device.status === 'open' && device.startTime) {
-                const playedMinutes = (Date.now() - device.startTime) / 60000;
-                additionalAccumulated = (playedMinutes / 60) * RATES[device.type];
-            }
+            const pastSessions = device.startTime ? saveSessionToPast(device, Date.now()) : (device.pastSessions || []);
 
             update(ref(db, `devices/${currentSelectedDeviceId}`), {
-                status: type, startTime: Date.now(), durationLimit: limit,
-                accumulatedTimePrice: (device.accumulatedTimePrice || 0) + additionalAccumulated
+                status: type, startTime: Date.now(), durationLimit: limit, pastSessions: pastSessions
             });
             window.closeModal('startModal');
         };
@@ -543,51 +559,64 @@
             setTimeout(() => btnList.style.backgroundColor = originalBg, 300);
         };
 
+        // ============ واجهة الفاتورة الجديدة المتقدمة ============
+        
         window.openBillModal = (id) => {
             currentSelectedDeviceId = id;
             const device = devices.find(d => d.id === id);
-            const detailsDiv = document.getElementById('billDetails');
-
-            let currentSessionPrice = 0;
-            let playedMinutesText = "";
+            currentBillItems = [];
             
-            if (device.startTime) {
-                if (device.status === 'timed') {
-                    currentSessionPrice = (device.durationLimit / 60) * RATES[device.type];
-                    playedMinutesText = `${device.durationLimit} دقيقة (محدد)`;
-                } else if (device.status === 'open') {
-                    const playedMins = (Date.now() - device.startTime) / 60000;
-                    currentSessionPrice = (playedMins / 60) * RATES[device.type];
-                    playedMinutesText = `${Math.ceil(playedMins)} دقيقة (مفتوح)`;
-                }
+            // 1. الأوقات السابقة الموقفة المنفصلة
+            if (device.pastSessions) {
+                device.pastSessions.forEach((s, idx) => {
+                    currentBillItems.push({ 
+                        id: `session_${idx}`, type: 'session', index: idx, 
+                        name: `لعب من ${formatDateTime(s.startTime)} إلى ${formatDateTime(s.endTime)}`, 
+                        price: s.price, selected: true 
+                    });
+                });
+            }
+            
+            // دعم للحسابات القديمة إن وجدت
+            if (device.accumulatedTimePrice > 0) {
+                currentBillItems.push({ id: 'legacy', type: 'legacy', name: 'وقت متراكم سابق', price: device.accumulatedTimePrice, selected: true });
             }
 
-            const roundedTimePrice = roundToNearest50((device.accumulatedTimePrice || 0) + currentSessionPrice);
-            const purchasesTotal = device.purchases.reduce((sum, p) => sum + p.price, 0);
-            const finalTotal = roundedTimePrice + purchasesTotal;
+            // 2. الجلسة الحالية المستمرة
+            if (device.startTime) {
+               let currentSessionPrice = 0;
+               let timeText = "";
+               if (device.status === 'timed') {
+                   currentSessionPrice = (device.durationLimit / 60) * RATES[device.type];
+                   timeText = `${device.durationLimit} دقيقة (مؤقت)`;
+               }
+               else if (device.status === 'open') {
+                   currentSessionPrice = ((Date.now() - device.startTime) / 60000 / 60) * RATES[device.type];
+                   timeText = `مفتوح`;
+               }
+               currentBillItems.push({ 
+                   id: 'active', type: 'active', 
+                   name: `(مستمر - ${timeText}) بدأ ${formatDateTime(device.startTime)}`, 
+                   price: currentSessionPrice, selected: true 
+               });
+            }
 
-            let purchasesListText = device.purchases.length > 0 
-                ? device.purchases.map(p => `<li>${p.name} - ${p.price}</li>`).join('') 
-                : "لا توجد مشتريات";
+            // 3. المشتريات المنفصلة
+            if (device.purchases) {
+                device.purchases.forEach((p, idx) => {
+                    currentBillItems.push({ 
+                        id: `prod_${idx}`, type: 'purchase', index: idx, 
+                        name: `🛒 ${p.name}`, price: p.price, selected: true 
+                    });
+                });
+            }
 
-            detailsDiv.innerHTML = `
-                <p>الجهاز: <strong>${device.name}</strong> <span style="color:var(--neon-blue)">(${device.type})</span></p>
-                <p>الحالة: <strong>${device.status === 'vacant' ? 'شاغر 🟢' : device.status === 'locked' ? 'مقفل 🔴' : 'شغال 🔵'}</strong></p>
-                ${device.startTime ? `<p>الجلسة الحالية: ${playedMinutesText}</p>` : ''}
-                <p>حساب الوقت: ${roundedTimePrice} د.ع</p>
-                <hr style="border-color: rgba(255,255,255,0.1);">
-                <p>المشتريات (${purchasesTotal} د.ع):</p>
-                <ul style="margin: 0; padding-right: 20px; font-size: 0.9em; color: var(--neon-yellow);">
-                    ${purchasesListText}
-                </ul>
-                <hr style="border-color: rgba(255,255,255,0.1);">
-                <h3 style="color: var(--neon-green)">المجموع الكلي: ${finalTotal} د.ع</h3>
-            `;
+            renderBillList(device);
 
             const stopBtn = document.getElementById('stopSessionBtn');
             if (device.status === 'open' || device.status === 'timed') {
                 stopBtn.classList.remove('hidden');
-                stopBtn.innerText = 'إيقاف وقفل الشاشة 🛑';
+                stopBtn.innerText = 'إيقاف الجلسة الحالية 🛑';
                 stopBtn.onclick = window.stopActiveSession;
             } else if (device.status === 'locked' || device.status === 'vacant') {
                 stopBtn.classList.remove('hidden');
@@ -598,24 +627,130 @@
             document.getElementById('billModal').showModal();
         };
 
-        window.stopActiveSession = () => {
-            const device = devices.find(d => d.id === currentSelectedDeviceId);
-            let sessionPrice = 0;
-            if (device.startTime) {
-                if (device.status === 'timed') sessionPrice = (device.durationLimit / 60) * RATES[device.type];
-                else if (device.status === 'open') sessionPrice = ((Date.now() - device.startTime) / 60000 / 60) * RATES[device.type];
-            }
-            update(ref(db, `devices/${currentSelectedDeviceId}`), {
-                status: 'locked', startTime: null, durationLimit: null,
-                accumulatedTimePrice: (device.accumulatedTimePrice || 0) + sessionPrice
-            });
-            window.closeModal('billModal');
+        window.toggleBillItem = (id) => {
+            const item = currentBillItems.find(i => i.id === id);
+            if (item) item.selected = !item.selected;
+            renderBillList(devices.find(d => d.id === currentSelectedDeviceId));
         };
 
-        window.clearAndPaySession = () => {
-            update(ref(db, `devices/${currentSelectedDeviceId}`), {
-                status: 'vacant', startTime: null, durationLimit: null, accumulatedTimePrice: 0, purchases: []
-            });
+        window.toggleAllBillItems = () => {
+            const allSelected = currentBillItems.every(i => i.selected);
+            currentBillItems.forEach(i => i.selected = !allSelected);
+            renderBillList(devices.find(d => d.id === currentSelectedDeviceId));
+        };
+
+        function renderBillList(device) {
+            const detailsDiv = document.getElementById('billDetails');
+            
+            let html = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <p style="margin: 0;">الجهاز: <strong>${device.name}</strong> <span style="color:var(--neon-blue)">(${device.type})</span></p>
+                    <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick="window.toggleAllBillItems()">تحديد الكل ☑️</button>
+                </div>
+                <div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
+            `;
+
+            let totalSelectedPrice = 0;
+
+            if (currentBillItems.length === 0) {
+                html += `<p style="text-align:center; color: #888;">لا توجد ديون، حسابات، أو مشتريات مسجلة حالياً.</p>`;
+            } else {
+                currentBillItems.forEach(item => {
+                    const roundedPrice = roundTo250(item.price);
+                    if (item.selected) totalSelectedPrice += roundedPrice;
+                    
+                    html += `
+                        <div class="bill-item">
+                            <label>
+                                <input type="checkbox" onchange="window.toggleBillItem('${item.id}')" ${item.selected ? 'checked' : ''}>
+                                <span style="font-size: 0.9rem; color: ${item.type === 'active' ? 'var(--neon-green)' : '#fff'}">${item.name}</span>
+                            </label>
+                            <span style="color: var(--neon-yellow); font-weight: bold;">${roundedPrice} د.ع</span>
+                        </div>
+                    `;
+                });
+            }
+
+            html += `</div>
+                <div class="bill-total-row">
+                    المجموع المحدد: <span style="color: var(--neon-green);">${totalSelectedPrice} د.ع</span>
+                </div>
+            `;
+            detailsDiv.innerHTML = html;
+        }
+
+        window.paySelectedItems = () => {
+            const device = devices.find(d => d.id === currentSelectedDeviceId);
+            let updates = {};
+
+            const selectedItems = currentBillItems.filter(i => i.selected);
+            if (selectedItems.length === 0) return alert('يرجى تحديد عنصر واحد على الأقل للدفع.');
+
+            // 1. مسح الجلسات السابقة المحددة
+            let remainingSessions = device.pastSessions ? [...device.pastSessions] : [];
+            if (device.pastSessions) {
+                const sessionsToRemove = selectedItems.filter(i => i.type === 'session').map(i => i.index);
+                remainingSessions = device.pastSessions.filter((_, idx) => !sessionsToRemove.includes(idx));
+                updates[`devices/${currentSelectedDeviceId}/pastSessions`] = remainingSessions;
+            }
+
+            // 2. مسح المشتريات المحددة
+            let remainingPurchases = device.purchases ? [...device.purchases] : [];
+            if (device.purchases) {
+                const purchasesToRemove = selectedItems.filter(i => i.type === 'purchase').map(i => i.index);
+                remainingPurchases = device.purchases.filter((_, idx) => !purchasesToRemove.includes(idx));
+                updates[`devices/${currentSelectedDeviceId}/purchases`] = remainingPurchases;
+            }
+
+            // 3. التعامل مع الجلسة الحالية المستمرة (عند دفعها سيتم إيقافها وقفل الشاشة)
+            let activeWasStopped = false;
+            if (selectedItems.find(i => i.id === 'active')) {
+                let sessionPrice = 0;
+                const now = Date.now();
+                if (device.status === 'timed') {
+                    sessionPrice = (device.durationLimit / 60) * RATES[device.type];
+                } else if (device.status === 'open') {
+                    sessionPrice = ((now - device.startTime) / 60000 / 60) * RATES[device.type];
+                }
+
+                if (sessionPrice > 0) {
+                    const newSession = {
+                        startTime: device.startTime,
+                        endTime: now,
+                        price: sessionPrice
+                    };
+                    remainingSessions.push(newSession);
+                    updates[`devices/${currentSelectedDeviceId}/pastSessions`] = remainingSessions;
+                }
+
+                updates[`devices/${currentSelectedDeviceId}/status`] = 'locked';
+                updates[`devices/${currentSelectedDeviceId}/startTime`] = null;
+                updates[`devices/${currentSelectedDeviceId}/durationLimit`] = null;
+                activeWasStopped = true;
+            }
+            
+            // 4. حذف النظام القديم
+            if (selectedItems.find(i => i.id === 'legacy')) {
+                updates[`devices/${currentSelectedDeviceId}/accumulatedTimePrice`] = 0;
+            }
+
+            // 5. إذا تم دفع كل شيء ولم يتبق أي شيء، نرجعه لحالة الشاغر (الأخضر)
+            const hasActiveNow = activeWasStopped ? false : (device.startTime !== null);
+            if (remainingPurchases.length === 0 && remainingSessions.length === 0 && !hasActiveNow) {
+                 updates[`devices/${currentSelectedDeviceId}/status`] = 'vacant';
+            }
+
+            update(ref(db, '/'), updates).then(() => window.closeModal('billModal'));
+        };
+
+        window.stopActiveSession = () => {
+            const device = devices.find(d => d.id === currentSelectedDeviceId);
+            if (device.startTime) {
+                const pastSessions = saveSessionToPast(device, Date.now());
+                update(ref(db, `devices/${currentSelectedDeviceId}`), {
+                    status: 'locked', startTime: null, durationLimit: null, pastSessions: pastSessions
+                });
+            }
             window.closeModal('billModal');
         };
 
@@ -643,15 +778,12 @@
             selectedDeviceIds.forEach(id => {
                 const device = devices.find(d => d.id === id);
                 if (device.status === 'open' || device.status === 'timed') {
-                    let sessionPrice = 0;
                     if (device.startTime) {
-                        if (device.status === 'timed') sessionPrice = (device.durationLimit / 60) * RATES[device.type];
-                        else if (device.status === 'open') sessionPrice = ((Date.now() - device.startTime) / 60000 / 60) * RATES[device.type];
+                        updates[`devices/${id}/pastSessions`] = saveSessionToPast(device, Date.now());
                     }
                     updates[`devices/${id}/status`] = 'locked';
                     updates[`devices/${id}/startTime`] = null;
                     updates[`devices/${id}/durationLimit`] = null;
-                    updates[`devices/${id}/accumulatedTimePrice`] = (device.accumulatedTimePrice || 0) + sessionPrice;
                 }
             });
             if (Object.keys(updates).length > 0) update(ref(db, '/'), updates);
@@ -660,6 +792,48 @@
             window.toggleMultiSelectMode(); 
         };
 
+        // 0. إدارة رفع فيديو قفل الشاشة
+        window.openVideoUploadModal = () => document.getElementById('videoUploadModal').showModal();
+        window.uploadVideoToFirebase = () => {
+            const fileInput = document.getElementById('videoFileInput');
+            const file = fileInput.files[0];
+            if (!file) return alert("يرجى اختيار ملف فيديو أولاً!");
+
+            const progressContainer = document.getElementById('uploadProgressContainer');
+            const progressBar = document.getElementById('uploadProgressBar');
+            const statusText = document.getElementById('uploadStatusText');
+
+            progressContainer.classList.remove('hidden');
+
+            const videoPath = `lock_videos/lock_screen_${Date.now()}.mp4`;
+            const videoStorageReference = storageRef(storage, videoPath);
+            const uploadTask = uploadBytesResumable(videoStorageReference, file);
+
+            uploadTask.on('state_changed', 
+                (snapshot) => {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                    progressBar.value = progress;
+                    statusText.innerText = `جاري الرفع... ${Math.round(progress)}%`;
+                }, 
+                (error) => {
+                    alert("حدث خطأ أثناء رفع الفيديو: " + error.message);
+                    progressContainer.classList.add('hidden');
+                }, 
+                () => {
+                    getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
+                        update(ref(db, 'globalSettings'), {
+                            lockVideoUrl: downloadURL,
+                            updatedAt: Date.now()
+                        }).then(() => {
+                            alert("تم رفع الفيديو وتحديث النظام بنجاح! ستقوم الأجهزة بتنزيله وتخزينه تلقائياً.");
+                            progressContainer.classList.add('hidden');
+                            window.closeModal('videoUploadModal');
+                            fileInput.value = '';
+                        });
+                    });
+                }
+            );
+        };
     </script>
 </body>
 </html>
