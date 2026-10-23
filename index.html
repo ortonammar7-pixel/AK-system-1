@@ -55,7 +55,8 @@
         .purchase-card { min-height: 84px; display: flex; flex-direction: column; justify-content: center; gap: 8px; text-align: center; border-radius: 10px; background: rgba(0, 0, 0, 0.6); }
         .wide-modal { width: min(900px, 94vw); max-height: 85vh; overflow-y: auto; }
         .accounting-device, .revenue-entry { background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 12px; margin-bottom: 10px; line-height: 1.8; }
-        .weekly-total { color: var(--neon-green); font-size: 2rem; font-weight: bold; text-shadow: 0 0 12px var(--neon-green); }
+        .weekly-summary { text-align: center; margin: 12px 0 18px; padding: 18px 12px; border: 2px solid var(--neon-green); border-radius: 12px; background: rgba(0, 183, 255, 0.12); box-shadow: 0 0 20px rgba(0, 255, 204, 0.25), inset 0 0 16px rgba(0, 255, 204, 0.08); }
+        .weekly-total { color: var(--neon-green); font-size: clamp(2.5rem, 9vw, 4rem); line-height: 1.15; font-weight: 900; text-shadow: 0 0 12px var(--neon-green); direction: ltr; }
         .revenue-details { margin-top: 8px; color: #c5c9d6; }
         .revenue-detail-list { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
         .revenue-detail-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 3px 0; }
@@ -282,9 +283,10 @@
 
     <dialog id="revenueModal" class="wide-modal">
         <h2>سجل الأرباح — آخر 7 أيام</h2>
-        <div style="text-align: center; margin: 15px 0;">
-            <div class="weekly-total" id="weeklyRevenueTotal">0 د.ع</div>
-            <div>إجمالي المبالغ المقبوضة خلال آخر 7 أيام</div>
+        <div class="weekly-summary" role="status" aria-live="polite">
+            <div style="font-size:1.05rem;font-weight:bold;margin-bottom:8px;">صافي المبالغ المقبوضة خلال آخر 7 أيام</div>
+            <div class="weekly-total" id="weeklyRevenueTotal">جارٍ التحميل...</div>
+            <div style="font-size:0.85rem;color:#c5c9d6;margin-top:8px;">مجموع الدفعات المسجلة في النظام</div>
         </div>
         <div id="revenueEntries" class="modal-body"></div>
         <button class="btn btn-danger" onclick="window.closeModal('revenueModal')" style="width: 100%;">إغلاق</button>
