@@ -56,6 +56,10 @@
         .wide-modal { width: min(900px, 94vw); max-height: 85vh; overflow-y: auto; }
         .accounting-device, .revenue-entry { background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 12px; margin-bottom: 10px; line-height: 1.8; }
         .weekly-total { color: var(--neon-green); font-size: 2rem; font-weight: bold; text-shadow: 0 0 12px var(--neon-green); }
+        .revenue-details { margin-top: 8px; color: #c5c9d6; }
+        .revenue-detail-list { display: flex; flex-direction: column; gap: 5px; margin-top: 5px; }
+        .revenue-detail-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 3px 0; }
+        .revenue-received { color: var(--neon-green); font-size: 1.1rem; font-weight: bold; margin-top: 8px; }
 
         .grid-container {
             display: grid;
@@ -256,7 +260,6 @@
         <div class="modal-body">
             <button id="stopSessionBtn" class="btn btn-danger hidden">إيقاف الجلسة الحالية 🛑</button>
             <button class="btn btn-primary" onclick="window.paySelectedItems()">دفع الحساب بالكامل وتصفير الجهاز 💵</button>
-            <button class="btn btn-warning" onclick="window.resetDeviceAccount()">تصفير الحساب دون دفع 🧹</button>
         </div>
         <button class="btn btn-secondary" onclick="window.closeModal('billModal')" style="width: 100%;">إغلاق</button>
     </dialog>
@@ -330,6 +333,11 @@
             const playedMinutes = Math.max(0, (effectiveEnd - device.startTime) / 60000);
             const blockMinutes = RATE_BLOCK_MINUTES[device.type];
             return blockMinutes ? Math.floor(playedMinutes / blockMinutes) * RATE_BLOCK_PRICE : 0;
+        }
+
+        function formatDateTime(ms) {
+            if (!ms) return 'غير محدد';
+            return new Date(ms).toLocaleTimeString('ar-IQ', { hour: 'numeric', minute: '2-digit' });
         }
 
         function formatFullDateTime(ms) {
@@ -483,8 +491,10 @@
                 card.className = `device-card ${device.status}`;
                 
                 card.ondblclick = () => {
-                    if ((device.status === 'vacant' || device.status === 'locked') && !isMultiSelectMode) {
+                    if (device.status === 'vacant') {
                         window.openStartModal(device.id);
+                    } else {
+                        window.openBillModal(device.id);
                     }
                 };
 
@@ -638,7 +648,7 @@
         function buildBillItems(device, now = Date.now()) {
             const items = (device.pastSessions || []).map((session, index) => ({
                 type: 'session',
-                name: `جلسة من ${formatFullDateTime(session.startTime)} إلى ${formatFullDateTime(session.endTime)}`,
+                name: `جلسة من ${formatDateTime(session.startTime)} إلى ${formatDateTime(session.endTime)}`,
                 price: Number(session.price) || 0,
                 ...(session.startTime !== undefined ? { startTime: session.startTime } : {}),
                 ...(session.endTime !== undefined ? { endTime: session.endTime } : {}),
@@ -653,7 +663,7 @@
                     : now;
                 items.push({
                     type: 'active',
-                    name: `${device.status === 'timed' ? 'جلسة محددة' : 'جلسة مفتوحة'} — بدأت ${formatFullDateTime(device.startTime)}${device.status === 'timed' ? `، تنتهي ${formatFullDateTime(device.startTime + device.durationLimit * 60000)}` : ''}`,
+                    name: `${device.status === 'timed' ? 'جلسة محددة' : 'جلسة مفتوحة'} — بدأت ${formatDateTime(device.startTime)}${device.status === 'timed' ? `، تنتهي ${formatDateTime(device.startTime + device.durationLimit * 60000)}` : ''}`,
                     price: calculateSessionPrice(device, now),
                     startTime: device.startTime,
                     endTime
@@ -742,37 +752,6 @@
                 [`devices/${device.id}/pastSessions`]: []
             }).then(() => window.closeModal('billModal'))
                 .catch(error => alert(`تعذر تسجيل الدفع وتصفير الجهاز: ${error.message}`))
-                .finally(() => pendingAccountWrites.delete(device.id));
-        };
-
-        window.resetDeviceAccount = () => {
-            const device = devices.find(d => d.id === currentSelectedDeviceId);
-            if (!device) return alert('تعذر العثور على الجهاز.');
-            if (pendingAccountWrites.has(device.id)) return;
-            if (!confirm('سيتم تصفير الحساب وإخلاء الجهاز دون تسجيل مبلغ كمقبوض. هل تريد المتابعة؟')) return;
-            pendingAccountWrites.add(device.id);
-            const now = Date.now();
-            const items = buildBillItems(device, now);
-            const amount = items.reduce((sum, item) => sum + item.price, 0);
-            const entry = createLedgerEntry({
-                type: 'account_reset',
-                deviceId: device.id,
-                deviceName: device.name,
-                deviceType: device.type,
-                amount,
-                revenueAmount: 0,
-                details: { writtenOffAmount: amount, items, resetAt: now }
-            });
-            update(ref(db, '/'), {
-                ...entry,
-                [`devices/${device.id}/status`]: 'vacant',
-                [`devices/${device.id}/startTime`]: null,
-                [`devices/${device.id}/durationLimit`]: null,
-                [`devices/${device.id}/accumulatedTimePrice`]: 0,
-                [`devices/${device.id}/purchases`]: [],
-                [`devices/${device.id}/pastSessions`]: []
-            }).then(() => window.closeModal('billModal'))
-                .catch(error => alert(`تعذر تسجيل التصفير: ${error.message}`))
                 .finally(() => pendingAccountWrites.delete(device.id));
         };
 
@@ -889,6 +868,27 @@
             document.getElementById('accountingModal').showModal();
         };
 
+        function formatRevenueDetails(entry) {
+            const details = entry.details || {};
+            if (Array.isArray(details.items) && details.items.length) {
+                return `<div class="revenue-detail-list">${details.items.map(item =>
+                    `<div class="revenue-detail-row"><span>${escapeHtml(item.name || item.type || 'بند')}</span><strong>${Number(item.price) || 0} د.ع</strong></div>`
+                ).join('')}</div>`;
+            }
+            if (entry.type === 'purchase_added') {
+                return `<div class="revenue-detail-row"><span>المنتج: ${escapeHtml(details.productName || 'غير محدد')}</span><strong>${Number(details.price ?? entry.amount) || 0} د.ع</strong></div>`;
+            }
+            if (entry.type === 'session_accrued') {
+                return `<div>الجلسة: ${details.status === 'timed' ? 'وقت محدد' : 'وقت مفتوح'}${details.source === 'bulk_stop' ? ' (إيقاف جماعي)' : ''}</div>
+                    <div>من ${formatFullDateTime(details.startTime)} إلى ${formatFullDateTime(details.endTime)}</div>
+                    <div>قيمة الجلسة: ${Number(entry.amount) || 0} د.ع</div>`;
+            }
+            if (entry.type === 'account_reset') {
+                return `<div>تصفير حساب - المبلغ المتنازل عنه: ${Number(details.writtenOffAmount ?? entry.amount) || 0} د.ع</div>`;
+            }
+            return '<div>لا توجد تفاصيل إضافية.</div>';
+        }
+
         function renderRevenueLog(entries) {
             const now = Date.now();
             const cutoff = now - 7 * 24 * 60 * 60 * 1000;
@@ -907,9 +907,10 @@
             list.innerHTML = recentEntries
                 .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
                 .map(entry => `<article class="revenue-entry">
-                    <strong>${escapeHtml(labels[entry.type] || entry.type)} — ${escapeHtml(entry.deviceName || 'النظام')}</strong>
-                    <div>${formatFullDateTime(entry.timestamp)} | المبلغ: ${Number(entry.amount) || 0} د.ع | المقبوض: ${Number(entry.revenueAmount) || 0} د.ع</div>
-                    <pre style="white-space:pre-wrap;overflow-wrap:anywhere;color:#aaa;">${escapeHtml(JSON.stringify(entry.details || {}, null, 2))}</pre>
+                    <strong>${escapeHtml(entry.deviceName || 'النظام')} <span style="color:var(--neon-blue)">(${escapeHtml(entry.deviceType || 'حركة عامة')})</span></strong>
+                    <div>${escapeHtml(labels[entry.type] || entry.type)} | ${formatFullDateTime(entry.timestamp)}</div>
+                    <div class="revenue-details">${formatRevenueDetails(entry)}</div>
+                    <div class="revenue-received">المبلغ المقبوض: ${Number(entry.revenueAmount) || (entry.type === 'payment' ? Number(entry.amount) || 0 : 0)} د.ع</div>
                 </article>`).join('') || '<p style="text-align:center;">لا توجد حركات مالية مسجلة خلال آخر 7 أيام.</p>';
         }
 
