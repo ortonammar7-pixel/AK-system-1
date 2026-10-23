@@ -51,6 +51,11 @@
             gap: 10px;
             flex-wrap: wrap;
         }
+        .purchase-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; max-height: 65vh; overflow-y: auto; padding: 4px; }
+        .purchase-card { min-height: 84px; display: flex; flex-direction: column; justify-content: center; gap: 8px; text-align: center; border-radius: 10px; background: rgba(0, 0, 0, 0.6); }
+        .wide-modal { width: min(900px, 94vw); max-height: 85vh; overflow-y: auto; }
+        .accounting-device, .revenue-entry { background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 12px; margin-bottom: 10px; line-height: 1.8; }
+        .weekly-total { color: var(--neon-green); font-size: 2rem; font-weight: bold; text-shadow: 0 0 12px var(--neon-green); }
 
         .grid-container {
             display: grid;
@@ -169,6 +174,10 @@
         @media (max-width: 900px) {
             .grid-container { grid-template-columns: repeat(4, 1fr) !important; }
         }
+        @media (max-width: 600px) {
+            .grid-container { grid-template-columns: repeat(2, minmax(120px, 1fr)) !important; }
+            .header-actions { width: 100%; }
+        }
     </style>
 </head>
 <body>
@@ -176,10 +185,12 @@
     <header class="main-header">
         <h1>🎮AK صالة الألعاب</h1>
         <div class="header-actions">
+            <button class="btn btn-warning" onclick="window.openRevenueModal()">سجل الأرباح 📈</button>
             <button class="btn btn-primary" onclick="window.openVideoUploadModal()">رفع فيديو القفل 🎬</button>
             <button class="btn btn-warning" onclick="window.openManageProductsModal()">إدارة المنتجات 🍔</button>
             <button id="multiSelectBtn" class="btn btn-secondary" onclick="window.toggleMultiSelectMode()">إدارة جماعية ☑️</button>
             <button id="bulkActionBtn" class="btn btn-danger hidden" onclick="window.openBulkModal()">إنهاء المحددة (0)</button>
+            <button class="btn btn-success" onclick="window.openAccountingModal()">محاسبة جماعية 📋</button>
         </div>
     </header>
 
@@ -217,9 +228,9 @@
     </dialog>
 
     <!-- 2. نافذة إضافة للمشتريات -->
-    <dialog id="purchasesModal">
+    <dialog id="purchasesModal" class="wide-modal">
         <h2>إضافة مشتريات للجهاز</h2>
-        <div class="modal-body" id="dynamicPurchasesList" style="max-height: 300px; overflow-y: auto;"></div>
+        <div class="purchase-grid" id="dynamicPurchasesList"></div>
         <button class="btn btn-danger" onclick="window.closeModal('purchasesModal')" style="width: 100%;">إغلاق</button>
     </dialog>
 
@@ -244,7 +255,8 @@
         <div id="billDetails" class="bill-details" style="padding: 10px; background: transparent; border: none;"></div>
         <div class="modal-body">
             <button id="stopSessionBtn" class="btn btn-danger hidden">إيقاف الجلسة الحالية 🛑</button>
-            <button class="btn btn-primary" onclick="window.paySelectedItems()">دفع المحدد وتحديث الجهاز 💵</button>
+            <button class="btn btn-primary" onclick="window.paySelectedItems()">دفع الحساب بالكامل وتصفير الجهاز 💵</button>
+            <button class="btn btn-warning" onclick="window.resetDeviceAccount()">تصفير الحساب دون دفع 🧹</button>
         </div>
         <button class="btn btn-secondary" onclick="window.closeModal('billModal')" style="width: 100%;">إغلاق</button>
     </dialog>
@@ -257,6 +269,22 @@
             <button class="btn btn-danger" onclick="window.executeBulkStop()">تأكيد الإيقاف الجماعي 🛑</button>
         </div>
         <button class="btn btn-secondary" onclick="window.closeModal('bulkModal')" style="width: 100%;">إلغاء</button>
+    </dialog>
+
+    <dialog id="accountingModal" class="wide-modal">
+        <h2>المحاسبة الجماعية — الأجهزة غير المصفّرة</h2>
+        <div id="accountingList" class="modal-body"></div>
+        <button class="btn btn-danger" onclick="window.closeModal('accountingModal')" style="width: 100%;">إغلاق</button>
+    </dialog>
+
+    <dialog id="revenueModal" class="wide-modal">
+        <h2>سجل الأرباح — آخر 7 أيام</h2>
+        <div style="text-align: center; margin: 15px 0;">
+            <div class="weekly-total" id="weeklyRevenueTotal">0 د.ع</div>
+            <div>إجمالي المبالغ المقبوضة خلال آخر 7 أيام</div>
+        </div>
+        <div id="revenueEntries" class="modal-body"></div>
+        <button class="btn btn-danger" onclick="window.closeModal('revenueModal')" style="width: 100%;">إغلاق</button>
     </dialog>
 
     <script type="module">
@@ -285,42 +313,52 @@
         let isMultiSelectMode = false;
         let selectedDeviceIds = new Set();
         let currentBillItems = [];
+        const pendingAccountWrites = new Set();
+        const expiringDeviceIds = new Set();
 
-        const RATES = { PC: 1500, PS5: 3000 };
+        const RATE_BLOCK_MINUTES = { PC: 10, PS5: 5 };
+        const RATE_BLOCK_PRICE = 250;
 
         // === 0. دوال مساعدة ===
         
-        // دالة التقريب لأقرب 250 دينار عراقي
-        function roundTo250(amount) {
-            if (amount <= 0) return 0;
-            return Math.ceil(amount / 250) * 250; 
+        function calculateSessionPrice(device, endTime) {
+            if (!device.startTime) return 0;
+            const scheduledEnd = device.status === 'timed' && device.durationLimit
+                ? device.startTime + device.durationLimit * 60000
+                : endTime;
+            const effectiveEnd = Math.min(endTime, scheduledEnd);
+            const playedMinutes = Math.max(0, (effectiveEnd - device.startTime) / 60000);
+            const blockMinutes = RATE_BLOCK_MINUTES[device.type];
+            return blockMinutes ? Math.floor(playedMinutes / blockMinutes) * RATE_BLOCK_PRICE : 0;
         }
 
-        // تحويل الوقت من ميلي ثانية إلى وقت مقروء
-        function formatDateTime(ms) {
+        function formatFullDateTime(ms) {
             if (!ms) return 'غير محدد';
-            const d = new Date(ms);
-            let hours = d.getHours();
-            let minutes = d.getMinutes();
-            const ampm = hours >= 12 ? 'م' : 'ص';
-            hours = hours % 12;
-            hours = hours ? hours : 12; 
-            minutes = minutes < 10 ? '0' + minutes : minutes;
-            return `${hours}:${minutes} ${ampm}`;
+            return new Date(ms).toLocaleString('ar-IQ');
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[char]);
+        }
+
+        function createLedgerEntry(entry) {
+            const id = push(ref(db, 'revenueLog')).key;
+            if (!id) throw new Error('تعذر إنشاء معرّف سجل الأرباح');
+            return { [`revenueLog/${id}`]: { ...entry, timestamp: Date.now() } };
         }
 
         // حفظ جلسة اللعب كبند منفصل في الفاتورة
         function saveSessionToPast(device, endTime) {
-            let sessionPrice = 0;
-            if (device.status === 'timed') {
-                sessionPrice = (device.durationLimit / 60) * RATES[device.type];
-            } else if (device.status === 'open') {
-                sessionPrice = ((endTime - device.startTime) / 60000 / 60) * RATES[device.type];
-            }
+            const sessionPrice = calculateSessionPrice(device, endTime);
+            const scheduledEnd = device.status === 'timed' && device.durationLimit
+                ? device.startTime + device.durationLimit * 60000
+                : endTime;
             
             const newSession = {
                 startTime: device.startTime,
-                endTime: endTime,
+                endTime: Math.min(endTime, scheduledEnd),
                 price: sessionPrice
             };
             
@@ -391,12 +429,11 @@
             const list = document.getElementById('dynamicPurchasesList');
             list.innerHTML = '';
             products.forEach(p => {
-                list.innerHTML += `
-                    <button class="btn btn-secondary" style="text-align: right; font-size: 1.1rem; padding: 10px;" 
-                        onclick="window.addPurchase('${p.name}', ${p.price})">
-                        🛒 ${p.name} <span style="float:left; color:var(--neon-yellow)">${p.price} د.ع</span>
-                    </button>
-                `;
+                const button = document.createElement('button');
+                button.className = 'btn btn-secondary purchase-card';
+                button.innerHTML = `🛒 ${escapeHtml(p.name)} <span style="color:var(--neon-yellow)">${Number(p.price) || 0} د.ع</span>`;
+                button.addEventListener('click', () => window.addPurchase(p.id));
+                list.appendChild(button);
             });
             if(products.length === 0) list.innerHTML = `<p style="text-align:center;">لا توجد منتجات. أضفها من "إدارة المنتجات".</p>`;
         }
@@ -429,10 +466,10 @@
         function initializeDevicesDatabase() {
             const initialDevices = {};
             for (let i = 1; i <= 14; i++) {
-                initialDevices[`PC${i}`] = { name: `PC ${i}`, type: 'PC', status: 'vacant', startTime: null, durationLimit: null };
+                initialDevices[`PC${i}`] = { name: `PC ${i}`, type: 'PC', status: 'vacant', startTime: null, durationLimit: null, accumulatedTimePrice: 0, purchases: [], pastSessions: [] };
             }
             for (let i = 1; i <= 4; i++) { 
-                initialDevices[`PS5${i}`] = { name: `بلي ${i}`, type: 'PS5', status: 'vacant', startTime: null, durationLimit: null };
+                initialDevices[`PS5${i}`] = { name: `PS5 ${i}`, type: 'PS5', status: 'vacant', startTime: null, durationLimit: null, accumulatedTimePrice: 0, purchases: [], pastSessions: [] };
             }
             set(ref(db, 'devices'), initialDevices);
         }
@@ -500,15 +537,38 @@
                 } else {
                     timeEl.innerText = "00:00:00";
                 }
+                if (device.id === currentSelectedDeviceId && document.getElementById('billModal').open) {
+                    currentBillItems = buildBillItems(device, now);
+                    renderBillList(device);
+                }
             });
         }, 1000);
 
         function lockExpiredDevice(device) {
-            if (device.status === 'locked') return;
-            const pastSessions = saveSessionToPast(device, Date.now());
-            update(ref(db, `devices/${device.id}`), { 
-                status: 'locked', startTime: null, durationLimit: null, pastSessions: pastSessions 
+            if (device.status === 'locked' || expiringDeviceIds.has(device.id)) return;
+            expiringDeviceIds.add(device.id);
+            const endTime = Date.now();
+            const pastSessions = saveSessionToPast(device, endTime);
+            const entry = createLedgerEntry({
+                type: 'session_accrued',
+                deviceId: device.id,
+                deviceName: device.name,
+                deviceType: device.type,
+                amount: calculateSessionPrice(device, endTime),
+                revenueAmount: 0,
+                details: { startTime: device.startTime, endTime: Math.min(endTime, device.startTime + device.durationLimit * 60000), status: device.status }
             });
+            update(ref(db, '/'), {
+                ...entry,
+                [`devices/${device.id}/status`]: 'locked',
+                [`devices/${device.id}/startTime`]: null,
+                [`devices/${device.id}/durationLimit`]: null,
+                [`devices/${device.id}/pastSessions`]: pastSessions
+            }).then(() => {
+                device.status = 'locked';
+            }).catch(error => {
+                alert(`تعذر حفظ إيقاف الجلسة: ${error.message}`);
+            }).finally(() => expiringDeviceIds.delete(device.id));
         }
 
         function formatTime(totalSeconds) {
@@ -547,12 +607,26 @@
             document.getElementById('purchasesModal').showModal();
         };
 
-        window.addPurchase = (itemName, price) => {
+        window.addPurchase = (productId) => {
             const device = devices.find(d => d.id === currentSelectedDeviceId);
-            const currentPurchases = device.purchases || [];
-            currentPurchases.push({ name: itemName, price: price });
-            update(ref(db, `devices/${currentSelectedDeviceId}`), { purchases: currentPurchases });
-            
+            const product = products.find(p => p.id === productId);
+            if (!device || !product) return alert('تعذر العثور على الجهاز أو المنتج.');
+            const purchase = { name: product.name, price: Number(product.price), timestamp: Date.now() };
+            const currentPurchases = [...(device.purchases || []), purchase];
+            const entry = createLedgerEntry({
+                type: 'purchase_added',
+                deviceId: device.id,
+                deviceName: device.name,
+                deviceType: device.type,
+                amount: purchase.price,
+                revenueAmount: 0,
+                details: { productName: purchase.name, price: purchase.price, status: 'unpaid' }
+            });
+            update(ref(db, '/'), {
+                ...entry,
+                [`devices/${device.id}/purchases`]: currentPurchases
+            }).catch(error => alert(`تعذر تسجيل المشتريات: ${error.message}`));
+
             const btnList = document.getElementById('dynamicPurchasesList');
             const originalBg = btnList.style.backgroundColor;
             btnList.style.backgroundColor = "rgba(0, 255, 204, 0.2)";
@@ -560,57 +634,42 @@
         };
 
         // ============ واجهة الفاتورة الجديدة المتقدمة ============
-        
+
+        function buildBillItems(device, now = Date.now()) {
+            const items = (device.pastSessions || []).map((session, index) => ({
+                type: 'session',
+                name: `جلسة من ${formatFullDateTime(session.startTime)} إلى ${formatFullDateTime(session.endTime)}`,
+                price: Number(session.price) || 0,
+                ...(session.startTime !== undefined ? { startTime: session.startTime } : {}),
+                ...(session.endTime !== undefined ? { endTime: session.endTime } : {}),
+                index
+            }));
+            if (Number(device.accumulatedTimePrice) > 0) {
+                items.push({ type: 'legacy', name: 'وقت متراكم سابق', price: Number(device.accumulatedTimePrice) });
+            }
+            if (device.startTime && (device.status === 'open' || device.status === 'timed')) {
+                const endTime = device.status === 'timed' && device.durationLimit
+                    ? Math.min(now, device.startTime + device.durationLimit * 60000)
+                    : now;
+                items.push({
+                    type: 'active',
+                    name: `${device.status === 'timed' ? 'جلسة محددة' : 'جلسة مفتوحة'} — بدأت ${formatFullDateTime(device.startTime)}${device.status === 'timed' ? `، تنتهي ${formatFullDateTime(device.startTime + device.durationLimit * 60000)}` : ''}`,
+                    price: calculateSessionPrice(device, now),
+                    startTime: device.startTime,
+                    endTime
+                });
+            }
+            (device.purchases || []).forEach((purchase, index) => {
+                items.push({ type: 'purchase', name: `🛒 ${purchase.name}`, price: Number(purchase.price) || 0, index });
+            });
+            return items;
+        }
+
         window.openBillModal = (id) => {
             currentSelectedDeviceId = id;
             const device = devices.find(d => d.id === id);
-            currentBillItems = [];
-            
-            // 1. الأوقات السابقة الموقفة المنفصلة
-            if (device.pastSessions) {
-                device.pastSessions.forEach((s, idx) => {
-                    currentBillItems.push({ 
-                        id: `session_${idx}`, type: 'session', index: idx, 
-                        name: `لعب من ${formatDateTime(s.startTime)} إلى ${formatDateTime(s.endTime)}`, 
-                        price: s.price, selected: true 
-                    });
-                });
-            }
-            
-            // دعم للحسابات القديمة إن وجدت
-            if (device.accumulatedTimePrice > 0) {
-                currentBillItems.push({ id: 'legacy', type: 'legacy', name: 'وقت متراكم سابق', price: device.accumulatedTimePrice, selected: true });
-            }
-
-            // 2. الجلسة الحالية المستمرة
-            if (device.startTime) {
-               let currentSessionPrice = 0;
-               let timeText = "";
-               if (device.status === 'timed') {
-                   currentSessionPrice = (device.durationLimit / 60) * RATES[device.type];
-                   timeText = `${device.durationLimit} دقيقة (مؤقت)`;
-               }
-               else if (device.status === 'open') {
-                   currentSessionPrice = ((Date.now() - device.startTime) / 60000 / 60) * RATES[device.type];
-                   timeText = `مفتوح`;
-               }
-               currentBillItems.push({ 
-                   id: 'active', type: 'active', 
-                   name: `(مستمر - ${timeText}) بدأ ${formatDateTime(device.startTime)}`, 
-                   price: currentSessionPrice, selected: true 
-               });
-            }
-
-            // 3. المشتريات المنفصلة
-            if (device.purchases) {
-                device.purchases.forEach((p, idx) => {
-                    currentBillItems.push({ 
-                        id: `prod_${idx}`, type: 'purchase', index: idx, 
-                        name: `🛒 ${p.name}`, price: p.price, selected: true 
-                    });
-                });
-            }
-
+            if (!device) return alert('تعذر العثور على الجهاز.');
+            currentBillItems = buildBillItems(device);
             renderBillList(device);
 
             const stopBtn = document.getElementById('stopSessionBtn');
@@ -627,45 +686,22 @@
             document.getElementById('billModal').showModal();
         };
 
-        window.toggleBillItem = (id) => {
-            const item = currentBillItems.find(i => i.id === id);
-            if (item) item.selected = !item.selected;
-            renderBillList(devices.find(d => d.id === currentSelectedDeviceId));
-        };
-
-        window.toggleAllBillItems = () => {
-            const allSelected = currentBillItems.every(i => i.selected);
-            currentBillItems.forEach(i => i.selected = !allSelected);
-            renderBillList(devices.find(d => d.id === currentSelectedDeviceId));
-        };
-
         function renderBillList(device) {
             const detailsDiv = document.getElementById('billDetails');
-            
             let html = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <p style="margin: 0;">الجهاز: <strong>${device.name}</strong> <span style="color:var(--neon-blue)">(${device.type})</span></p>
-                    <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.8rem;" onclick="window.toggleAllBillItems()">تحديد الكل ☑️</button>
-                </div>
+                <p style="margin: 0 0 10px;">الجهاز: <strong>${escapeHtml(device.name)}</strong> <span style="color:var(--neon-blue)">(${escapeHtml(device.type)})</span></p>
                 <div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
             `;
-
-            let totalSelectedPrice = 0;
+            const totalPrice = currentBillItems.reduce((sum, item) => sum + item.price, 0);
 
             if (currentBillItems.length === 0) {
                 html += `<p style="text-align:center; color: #888;">لا توجد ديون، حسابات، أو مشتريات مسجلة حالياً.</p>`;
             } else {
                 currentBillItems.forEach(item => {
-                    const roundedPrice = roundTo250(item.price);
-                    if (item.selected) totalSelectedPrice += roundedPrice;
-                    
                     html += `
                         <div class="bill-item">
-                            <label>
-                                <input type="checkbox" onchange="window.toggleBillItem('${item.id}')" ${item.selected ? 'checked' : ''}>
-                                <span style="font-size: 0.9rem; color: ${item.type === 'active' ? 'var(--neon-green)' : '#fff'}">${item.name}</span>
-                            </label>
-                            <span style="color: var(--neon-yellow); font-weight: bold;">${roundedPrice} د.ع</span>
+                            <span style="font-size: 0.9rem; color: ${item.type === 'active' ? 'var(--neon-green)' : '#fff'}">${escapeHtml(item.name)}</span>
+                            <span style="color: var(--neon-yellow); font-weight: bold;">${item.price} د.ع</span>
                         </div>
                     `;
                 });
@@ -673,7 +709,7 @@
 
             html += `</div>
                 <div class="bill-total-row">
-                    المجموع المحدد: <span style="color: var(--neon-green);">${totalSelectedPrice} د.ع</span>
+                    الإجمالي: <span style="color: var(--neon-green);">${totalPrice} د.ع</span>
                 </div>
             `;
             detailsDiv.innerHTML = html;
@@ -681,75 +717,91 @@
 
         window.paySelectedItems = () => {
             const device = devices.find(d => d.id === currentSelectedDeviceId);
-            let updates = {};
+            if (!device) return alert('تعذر العثور على الجهاز.');
+            if (pendingAccountWrites.has(device.id)) return;
+            pendingAccountWrites.add(device.id);
+            const now = Date.now();
+            const items = buildBillItems(device, now);
+            const amount = items.reduce((sum, item) => sum + item.price, 0);
+            const entry = createLedgerEntry({
+                type: 'payment',
+                deviceId: device.id,
+                deviceName: device.name,
+                deviceType: device.type,
+                amount,
+                revenueAmount: amount,
+                details: { items, paidAt: now }
+            });
+            update(ref(db, '/'), {
+                ...entry,
+                [`devices/${device.id}/status`]: 'vacant',
+                [`devices/${device.id}/startTime`]: null,
+                [`devices/${device.id}/durationLimit`]: null,
+                [`devices/${device.id}/accumulatedTimePrice`]: 0,
+                [`devices/${device.id}/purchases`]: [],
+                [`devices/${device.id}/pastSessions`]: []
+            }).then(() => window.closeModal('billModal'))
+                .catch(error => alert(`تعذر تسجيل الدفع وتصفير الجهاز: ${error.message}`))
+                .finally(() => pendingAccountWrites.delete(device.id));
+        };
 
-            const selectedItems = currentBillItems.filter(i => i.selected);
-            if (selectedItems.length === 0) return alert('يرجى تحديد عنصر واحد على الأقل للدفع.');
-
-            // 1. مسح الجلسات السابقة المحددة
-            let remainingSessions = device.pastSessions ? [...device.pastSessions] : [];
-            if (device.pastSessions) {
-                const sessionsToRemove = selectedItems.filter(i => i.type === 'session').map(i => i.index);
-                remainingSessions = device.pastSessions.filter((_, idx) => !sessionsToRemove.includes(idx));
-                updates[`devices/${currentSelectedDeviceId}/pastSessions`] = remainingSessions;
-            }
-
-            // 2. مسح المشتريات المحددة
-            let remainingPurchases = device.purchases ? [...device.purchases] : [];
-            if (device.purchases) {
-                const purchasesToRemove = selectedItems.filter(i => i.type === 'purchase').map(i => i.index);
-                remainingPurchases = device.purchases.filter((_, idx) => !purchasesToRemove.includes(idx));
-                updates[`devices/${currentSelectedDeviceId}/purchases`] = remainingPurchases;
-            }
-
-            // 3. التعامل مع الجلسة الحالية المستمرة (عند دفعها سيتم إيقافها وقفل الشاشة)
-            let activeWasStopped = false;
-            if (selectedItems.find(i => i.id === 'active')) {
-                let sessionPrice = 0;
-                const now = Date.now();
-                if (device.status === 'timed') {
-                    sessionPrice = (device.durationLimit / 60) * RATES[device.type];
-                } else if (device.status === 'open') {
-                    sessionPrice = ((now - device.startTime) / 60000 / 60) * RATES[device.type];
-                }
-
-                if (sessionPrice > 0) {
-                    const newSession = {
-                        startTime: device.startTime,
-                        endTime: now,
-                        price: sessionPrice
-                    };
-                    remainingSessions.push(newSession);
-                    updates[`devices/${currentSelectedDeviceId}/pastSessions`] = remainingSessions;
-                }
-
-                updates[`devices/${currentSelectedDeviceId}/status`] = 'locked';
-                updates[`devices/${currentSelectedDeviceId}/startTime`] = null;
-                updates[`devices/${currentSelectedDeviceId}/durationLimit`] = null;
-                activeWasStopped = true;
-            }
-            
-            // 4. حذف النظام القديم
-            if (selectedItems.find(i => i.id === 'legacy')) {
-                updates[`devices/${currentSelectedDeviceId}/accumulatedTimePrice`] = 0;
-            }
-
-            // 5. إذا تم دفع كل شيء ولم يتبق أي شيء، نرجعه لحالة الشاغر (الأخضر)
-            const hasActiveNow = activeWasStopped ? false : (device.startTime !== null);
-            if (remainingPurchases.length === 0 && remainingSessions.length === 0 && !hasActiveNow) {
-                 updates[`devices/${currentSelectedDeviceId}/status`] = 'vacant';
-            }
-
-            update(ref(db, '/'), updates).then(() => window.closeModal('billModal'));
+        window.resetDeviceAccount = () => {
+            const device = devices.find(d => d.id === currentSelectedDeviceId);
+            if (!device) return alert('تعذر العثور على الجهاز.');
+            if (pendingAccountWrites.has(device.id)) return;
+            if (!confirm('سيتم تصفير الحساب وإخلاء الجهاز دون تسجيل مبلغ كمقبوض. هل تريد المتابعة؟')) return;
+            pendingAccountWrites.add(device.id);
+            const now = Date.now();
+            const items = buildBillItems(device, now);
+            const amount = items.reduce((sum, item) => sum + item.price, 0);
+            const entry = createLedgerEntry({
+                type: 'account_reset',
+                deviceId: device.id,
+                deviceName: device.name,
+                deviceType: device.type,
+                amount,
+                revenueAmount: 0,
+                details: { writtenOffAmount: amount, items, resetAt: now }
+            });
+            update(ref(db, '/'), {
+                ...entry,
+                [`devices/${device.id}/status`]: 'vacant',
+                [`devices/${device.id}/startTime`]: null,
+                [`devices/${device.id}/durationLimit`]: null,
+                [`devices/${device.id}/accumulatedTimePrice`]: 0,
+                [`devices/${device.id}/purchases`]: [],
+                [`devices/${device.id}/pastSessions`]: []
+            }).then(() => window.closeModal('billModal'))
+                .catch(error => alert(`تعذر تسجيل التصفير: ${error.message}`))
+                .finally(() => pendingAccountWrites.delete(device.id));
         };
 
         window.stopActiveSession = () => {
             const device = devices.find(d => d.id === currentSelectedDeviceId);
             if (device.startTime) {
-                const pastSessions = saveSessionToPast(device, Date.now());
-                update(ref(db, `devices/${currentSelectedDeviceId}`), {
-                    status: 'locked', startTime: null, durationLimit: null, pastSessions: pastSessions
+                const endTime = Date.now();
+                const pastSessions = saveSessionToPast(device, endTime);
+                const scheduledEnd = device.status === 'timed' && device.durationLimit
+                    ? device.startTime + device.durationLimit * 60000
+                    : endTime;
+                const entry = createLedgerEntry({
+                    type: 'session_accrued',
+                    deviceId: device.id,
+                    deviceName: device.name,
+                    deviceType: device.type,
+                    amount: calculateSessionPrice(device, endTime),
+                    revenueAmount: 0,
+                    details: { startTime: device.startTime, endTime: Math.min(endTime, scheduledEnd), status: device.status }
                 });
+                update(ref(db, '/'), {
+                    ...entry,
+                    [`devices/${device.id}/status`]: 'locked',
+                    [`devices/${device.id}/startTime`]: null,
+                    [`devices/${device.id}/durationLimit`]: null,
+                    [`devices/${device.id}/pastSessions`]: pastSessions
+                }).then(() => window.closeModal('billModal'))
+                    .catch(error => alert(`تعذر حفظ إيقاف الجلسة: ${error.message}`));
+                return;
             }
             window.closeModal('billModal');
         };
@@ -777,20 +829,105 @@
             const updates = {};
             selectedDeviceIds.forEach(id => {
                 const device = devices.find(d => d.id === id);
-                if (device.status === 'open' || device.status === 'timed') {
-                    if (device.startTime) {
-                        updates[`devices/${id}/pastSessions`] = saveSessionToPast(device, Date.now());
-                    }
-                    updates[`devices/${id}/status`] = 'locked';
-                    updates[`devices/${id}/startTime`] = null;
-                    updates[`devices/${id}/durationLimit`] = null;
+                if (!device || (device.status !== 'open' && device.status !== 'timed')) return;
+                const endTime = Date.now();
+                updates[`devices/${id}/status`] = 'locked';
+                updates[`devices/${id}/startTime`] = null;
+                updates[`devices/${id}/durationLimit`] = null;
+                if (device.startTime) {
+                    updates[`devices/${id}/pastSessions`] = saveSessionToPast(device, endTime);
+                    const scheduledEnd = device.status === 'timed' && device.durationLimit
+                        ? device.startTime + device.durationLimit * 60000
+                        : endTime;
+                    Object.assign(updates, createLedgerEntry({
+                        type: 'session_accrued',
+                        deviceId: device.id,
+                        deviceName: device.name,
+                        deviceType: device.type,
+                        amount: calculateSessionPrice(device, endTime),
+                        revenueAmount: 0,
+                        details: { startTime: device.startTime, endTime: Math.min(endTime, scheduledEnd), status: device.status, source: 'bulk_stop' }
+                    }));
                 }
             });
-            if (Object.keys(updates).length > 0) update(ref(db, '/'), updates);
-            
-            window.closeModal('bulkModal');
-            window.toggleMultiSelectMode(); 
+            const save = Object.keys(updates).length > 0 ? update(ref(db, '/'), updates) : Promise.resolve();
+            save.then(() => {
+                window.closeModal('bulkModal');
+                window.toggleMultiSelectMode();
+            }).catch(error => alert(`تعذر حفظ الإيقاف الجماعي: ${error.message}`));
         };
+
+        // === 6. المحاسبة وسجل الأرباح ===
+        window.openAccountingModal = () => {
+            const pendingDevices = devices.filter(device =>
+                device.status !== 'vacant' ||
+                device.startTime ||
+                (device.pastSessions || []).length > 0 ||
+                (device.purchases || []).length > 0 ||
+                Number(device.accumulatedTimePrice) > 0
+            );
+            const list = document.getElementById('accountingList');
+            if (pendingDevices.length === 0) {
+                list.innerHTML = '<p style="text-align:center;">لا توجد أجهزة بحسابات معلّقة.</p>';
+            } else {
+                list.innerHTML = pendingDevices.map(device => {
+                    const statusText = { vacant: 'شاغر', open: 'وقت مفتوح', timed: 'وقت محدد', locked: 'مقفل' }[device.status] || device.status;
+                    const items = buildBillItems(device);
+                    const total = items.reduce((sum, item) => sum + item.price, 0);
+                    const details = items.length
+                        ? items.map(item => `<div>${escapeHtml(item.name)} — <strong>${item.price} د.ع</strong></div>`).join('')
+                        : '<div>لا توجد مبالغ مسجلة حتى الآن.</div>';
+                    return `<section class="accounting-device">
+                        <strong>${escapeHtml(device.name)} (${escapeHtml(device.type)})</strong>
+                        <div>الحالة: ${escapeHtml(statusText)} | بداية الجلسة: ${formatFullDateTime(device.startTime)}</div>
+                        ${device.status === 'timed' && device.startTime && device.durationLimit ? `<div>نهاية الوقت المحدد: ${formatFullDateTime(device.startTime + device.durationLimit * 60000)}</div>` : ''}
+                        <div>${details}</div>
+                        <div style="color:var(--neon-yellow);font-weight:bold;">إجمالي الحساب: ${total} د.ع</div>
+                    </section>`;
+                }).join('');
+            }
+            document.getElementById('accountingModal').showModal();
+        };
+
+        function renderRevenueLog(entries) {
+            const now = Date.now();
+            const cutoff = now - 7 * 24 * 60 * 60 * 1000;
+            const recentEntries = entries.filter(entry => Number(entry.timestamp) >= cutoff && Number(entry.timestamp) <= now);
+            const total = recentEntries.reduce((sum, entry) =>
+                sum + (Number(entry.revenueAmount) || (entry.type === 'payment' ? Number(entry.amount) || 0 : 0)), 0);
+            document.getElementById('weeklyRevenueTotal').innerText = `${total} د.ع`;
+
+            const labels = {
+                payment: 'دفع مقبوض',
+                purchase_added: 'إضافة مشتريات (غير مدفوعة)',
+                session_accrued: 'احتساب جلسة (غير مقبوضة)',
+                account_reset: 'تصفير / مبلغ متنازل عنه'
+            };
+            const list = document.getElementById('revenueEntries');
+            list.innerHTML = recentEntries
+                .sort((a, b) => Number(b.timestamp) - Number(a.timestamp))
+                .map(entry => `<article class="revenue-entry">
+                    <strong>${escapeHtml(labels[entry.type] || entry.type)} — ${escapeHtml(entry.deviceName || 'النظام')}</strong>
+                    <div>${formatFullDateTime(entry.timestamp)} | المبلغ: ${Number(entry.amount) || 0} د.ع | المقبوض: ${Number(entry.revenueAmount) || 0} د.ع</div>
+                    <pre style="white-space:pre-wrap;overflow-wrap:anywhere;color:#aaa;">${escapeHtml(JSON.stringify(entry.details || {}, null, 2))}</pre>
+                </article>`).join('') || '<p style="text-align:center;">لا توجد حركات مالية مسجلة خلال آخر 7 أيام.</p>';
+        }
+
+        const revenueLogRef = ref(db, 'revenueLog');
+        onValue(revenueLogRef, snapshot => {
+            const data = snapshot.val() || {};
+            const entries = Object.entries(data).map(([id, entry]) => ({ id, ...entry }));
+            renderRevenueLog(entries);
+            const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+            entries.filter(entry => Number.isFinite(Number(entry.timestamp)) && Number(entry.timestamp) < cutoff)
+                .forEach(entry => remove(ref(db, `revenueLog/${entry.id}`))
+                    .catch(error => console.error(`تعذر حذف سجل الأرباح المنتهي ${entry.id}:`, error)));
+        }, error => {
+            console.error('تعذر تحميل سجل الأرباح:', error);
+            alert(`تعذر تحميل سجل الأرباح: ${error.message}`);
+        });
+
+        window.openRevenueModal = () => document.getElementById('revenueModal').showModal();
 
         // 0. إدارة رفع فيديو قفل الشاشة
         window.openVideoUploadModal = () => document.getElementById('videoUploadModal').showModal();
