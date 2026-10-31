@@ -10,6 +10,7 @@ const emptyTarget = (id, type) => ({
     startTime: null,
     durationLimit: null,
     freeTimeUntil: null,
+    startOffsetMinutes: 0,
     accumulatedTimePrice: 0,
     purchases: [],
     pastSessions: []
@@ -23,6 +24,7 @@ test('same-type transfer preserves the active session and account data', () => {
         startTime: 1000,
         durationLimit: 45,
         freeTimeUntil: null,
+        startOffsetMinutes: 0,
         accumulatedTimePrice: 500,
         purchases: [{ name: 'ماء', price: 500 }],
         pastSessions: [{ startTime: 1, endTime: 2, price: 250 }]
@@ -38,6 +40,7 @@ test('same-type transfer preserves the active session and account data', () => {
         startTime: 1000,
         durationLimit: 45,
         freeTimeUntil: null,
+        startOffsetMinutes: 0,
         accumulatedTimePrice: 500,
         purchases: source.purchases,
         pastSessions: source.pastSessions
@@ -47,6 +50,7 @@ test('same-type transfer preserves the active session and account data', () => {
         startTime: null,
         durationLimit: null,
         freeTimeUntil: null,
+        startOffsetMinutes: 0,
         accumulatedTimePrice: 0,
         purchases: [],
         pastSessions: []
@@ -94,6 +98,7 @@ test('different-type transfer keeps an open session open and begins it at transf
         startTime: 500,
         durationLimit: null,
         freeTimeUntil: null,
+        startOffsetMinutes: 0,
         accumulatedTimePrice: 0,
         purchases: [],
         pastSessions: []
@@ -113,7 +118,7 @@ test('different-type transfer keeps an open session open and begins it at transf
     assert.equal(plan.details.targetSession.startTime, transferredAt);
 });
 
-test('open-session free time is preserved between same-type devices and carries over across types', () => {
+test('legacy open-session delay is preserved on same type and accrued before cross-type restart', () => {
     const freeTimeUntil = 180_000;
     const source = {
         type: 'PC',
@@ -121,6 +126,7 @@ test('open-session free time is preserved between same-type devices and carries 
         startTime: 60_000,
         durationLimit: null,
         freeTimeUntil,
+        startOffsetMinutes: 0,
         accumulatedTimePrice: 0,
         purchases: [],
         pastSessions: []
@@ -128,9 +134,16 @@ test('open-session free time is preserved between same-type devices and carries 
     const sameTypePlan = createDeviceTransferPlan(source, emptyTarget('PC2', 'PC'), 90_000, () => 0);
     assert.equal(sameTypePlan.targetUpdates.freeTimeUntil, freeTimeUntil);
 
-    const crossTypePlan = createDeviceTransferPlan(source, emptyTarget('PS51', 'PS5'), 90_000, () => 0);
+    let calculated;
+    const crossTypePlan = createDeviceTransferPlan(source, emptyTarget('PS51', 'PS5'), 90_000, (device, endTime) => {
+        calculated = { device, endTime };
+        return 250;
+    });
+    assert.deepEqual(calculated, { device: source, endTime: 90_000 });
     assert.equal(crossTypePlan.targetUpdates.startTime, 90_000);
-    assert.equal(crossTypePlan.targetUpdates.freeTimeUntil, freeTimeUntil);
+    assert.equal(crossTypePlan.targetUpdates.freeTimeUntil, null);
+    assert.equal(crossTypePlan.targetUpdates.startOffsetMinutes, 0);
+    assert.equal(crossTypePlan.details.sourceSession.accruedSession.startTime, -60_000);
     assert.equal(crossTypePlan.sourceUpdates.freeTimeUntil, null);
 });
 
@@ -165,6 +178,7 @@ test('expired timed sessions cannot be transferred across device types', () => {
         startTime: 1000,
         durationLimit: 1,
         freeTimeUntil: null,
+        startOffsetMinutes: 0,
         purchases: [],
         pastSessions: []
     };

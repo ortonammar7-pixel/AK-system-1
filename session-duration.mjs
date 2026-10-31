@@ -20,16 +20,20 @@ export function getAdditionalMinutes(extraTimeEnabled, extraMinutes) {
     return additionalMinutes;
 }
 
-export function getOpenSessionDisplaySeconds(startTime, freeTimeUntil, now) {
-    const remainingFreeSeconds = Math.ceil((Number(freeTimeUntil) - now) / 1000);
-    if (remainingFreeSeconds > 0) {
-        return { label: 'وقت إضافي', seconds: remainingFreeSeconds };
+export function getOpenSessionStartTime(startTime, startOffsetMinutes, legacyFreeTimeUntil = null) {
+    let offsetMinutes = Number(startOffsetMinutes) || 0;
+    if (offsetMinutes <= 0 && Number(legacyFreeTimeUntil) > startTime) {
+        offsetMinutes = (Number(legacyFreeTimeUntil) - startTime) / 60000;
     }
-    const billingStartTime = Math.max(startTime, Number(freeTimeUntil) || startTime);
-    return { label: '', seconds: Math.max(0, Math.floor((now - billingStartTime) / 1000)) };
+    return startTime - Math.max(0, offsetMinutes) * 60000;
 }
 
-export function getOpenSessionBillableMinutes(startTime, freeTimeUntil, endTime) {
-    const billingStartTime = Math.max(startTime, Number(freeTimeUntil) || startTime);
-    return Math.max(0, (endTime - billingStartTime) / 60000);
+export function getOpenSessionDisplaySeconds(startTime, startOffsetMinutes, now, legacyFreeTimeUntil = null) {
+    const adjustedStartTime = getOpenSessionStartTime(startTime, startOffsetMinutes, legacyFreeTimeUntil);
+    return { label: '', seconds: Math.max(0, Math.floor((now - adjustedStartTime) / 1000)) };
+}
+
+export function getOpenSessionBillableMinutes(startTime, startOffsetMinutes, endTime, legacyFreeTimeUntil = null) {
+    const adjustedStartTime = getOpenSessionStartTime(startTime, startOffsetMinutes, legacyFreeTimeUntil);
+    return Math.max(0, (endTime - adjustedStartTime) / 60000);
 }
