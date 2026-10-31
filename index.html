@@ -228,6 +228,11 @@
                 <input type="number" id="minutesInput" placeholder="عدد الدقائق (مثال: 60)" min="1">
                 <button class="btn btn-secondary" onclick="window.startSession('timed')">تأكيد الوقت ⏱️</button>
             </div>
+            <button id="extraTimeToggle" class="btn btn-secondary" type="button" aria-pressed="false" onclick="window.toggleExtraTime()">إضافة وقت إضافي</button>
+            <div id="extraTimeField" class="time-input-group hidden">
+                <label for="extraMinutesInput">دقائق إضافية:</label>
+                <input type="number" id="extraMinutesInput" value="10" min="1" step="1" aria-label="عدد الدقائق الإضافية">
+            </div>
         </div>
         <button class="btn btn-danger" onclick="window.closeModal('startModal')" style="width: 100%;">إلغاء</button>
     </dialog>
@@ -309,6 +314,7 @@
         import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
         import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
         import { createDeviceTransferPlan, isTransferTargetAvailable } from "./device-transfer.mjs";
+        import { calculateTimedSessionDuration } from "./session-duration.mjs";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDEof31VeMcWPIcPd6FSOzxYenOnLjEfgA",
@@ -609,7 +615,22 @@
 
         window.openStartModal = (id) => {
             currentSelectedDeviceId = id;
+            const extraTimeToggle = document.getElementById('extraTimeToggle');
+            extraTimeToggle.setAttribute('aria-pressed', 'false');
+            extraTimeToggle.classList.remove('btn-warning');
+            extraTimeToggle.classList.add('btn-secondary');
+            document.getElementById('extraTimeField').classList.add('hidden');
+            document.getElementById('extraMinutesInput').value = '10';
             document.getElementById('startModal').showModal();
+        };
+
+        window.toggleExtraTime = () => {
+            const toggle = document.getElementById('extraTimeToggle');
+            const enabled = toggle.getAttribute('aria-pressed') !== 'true';
+            toggle.setAttribute('aria-pressed', String(enabled));
+            toggle.classList.toggle('btn-warning', enabled);
+            toggle.classList.toggle('btn-secondary', !enabled);
+            document.getElementById('extraTimeField').classList.toggle('hidden', !enabled);
         };
 
         window.startSession = (type) => {
@@ -618,8 +639,14 @@
             if (pendingAccountWrites.has(device.id)) return alert('هناك عملية حساب جارية على الجهاز؛ انتظر اكتمالها ثم أعد المحاولة.');
             let limit = null;
             if (type === 'timed') {
-                limit = parseInt(document.getElementById('minutesInput').value);
-                if (!limit || limit <= 0) return alert("يرجى إدخال عدد دقائق صحيح");
+                const minutes = Number(document.getElementById('minutesInput').value);
+                const extraTimeEnabled = document.getElementById('extraTimeToggle').getAttribute('aria-pressed') === 'true';
+                const extraMinutes = extraTimeEnabled ? Number(document.getElementById('extraMinutesInput').value) : 0;
+                try {
+                    limit = calculateTimedSessionDuration(minutes, extraTimeEnabled, extraMinutes);
+                } catch (error) {
+                    return alert(error.message);
+                }
             }
 
             const pastSessions = device.startTime ? saveSessionToPast(device, Date.now()) : (device.pastSessions || []);
