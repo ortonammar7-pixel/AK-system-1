@@ -9,6 +9,7 @@ const emptyTarget = (id, type) => ({
     status: 'vacant',
     startTime: null,
     durationLimit: null,
+    freeTimeUntil: null,
     accumulatedTimePrice: 0,
     purchases: [],
     pastSessions: []
@@ -21,6 +22,7 @@ test('same-type transfer preserves the active session and account data', () => {
         status: 'timed',
         startTime: 1000,
         durationLimit: 45,
+        freeTimeUntil: null,
         accumulatedTimePrice: 500,
         purchases: [{ name: 'ماء', price: 500 }],
         pastSessions: [{ startTime: 1, endTime: 2, price: 250 }]
@@ -35,6 +37,7 @@ test('same-type transfer preserves the active session and account data', () => {
         status: 'timed',
         startTime: 1000,
         durationLimit: 45,
+        freeTimeUntil: null,
         accumulatedTimePrice: 500,
         purchases: source.purchases,
         pastSessions: source.pastSessions
@@ -43,6 +46,7 @@ test('same-type transfer preserves the active session and account data', () => {
         status: 'vacant',
         startTime: null,
         durationLimit: null,
+        freeTimeUntil: null,
         accumulatedTimePrice: 0,
         purchases: [],
         pastSessions: []
@@ -56,6 +60,7 @@ test('different-type transfer accrues source time and starts a fresh timed sessi
         status: 'timed',
         startTime: 1_000_000,
         durationLimit: 60,
+        freeTimeUntil: null,
         accumulatedTimePrice: 250,
         purchases: [{ name: 'بيبسي', price: 1000 }],
         pastSessions: [{ startTime: 1, endTime: 2, price: 250 }]
@@ -88,6 +93,7 @@ test('different-type transfer keeps an open session open and begins it at transf
         status: 'open',
         startTime: 500,
         durationLimit: null,
+        freeTimeUntil: null,
         accumulatedTimePrice: 0,
         purchases: [],
         pastSessions: []
@@ -107,6 +113,27 @@ test('different-type transfer keeps an open session open and begins it at transf
     assert.equal(plan.details.targetSession.startTime, transferredAt);
 });
 
+test('open-session free time is preserved between same-type devices and carries over across types', () => {
+    const freeTimeUntil = 180_000;
+    const source = {
+        type: 'PC',
+        status: 'open',
+        startTime: 60_000,
+        durationLimit: null,
+        freeTimeUntil,
+        accumulatedTimePrice: 0,
+        purchases: [],
+        pastSessions: []
+    };
+    const sameTypePlan = createDeviceTransferPlan(source, emptyTarget('PC2', 'PC'), 90_000, () => 0);
+    assert.equal(sameTypePlan.targetUpdates.freeTimeUntil, freeTimeUntil);
+
+    const crossTypePlan = createDeviceTransferPlan(source, emptyTarget('PS51', 'PS5'), 90_000, () => 0);
+    assert.equal(crossTypePlan.targetUpdates.startTime, 90_000);
+    assert.equal(crossTypePlan.targetUpdates.freeTimeUntil, freeTimeUntil);
+    assert.equal(crossTypePlan.sourceUpdates.freeTimeUntil, null);
+});
+
 test('a target with a locked state or any saved account data is unavailable', () => {
     assert.equal(isTransferTargetAvailable(emptyTarget('PC2', 'PC')), true);
     assert.equal(isTransferTargetAvailable({ ...emptyTarget('PC2', 'PC'), status: 'locked' }), false);
@@ -117,6 +144,10 @@ test('a target with a locked state or any saved account data is unavailable', ()
     assert.equal(isTransferTargetAvailable({
         ...emptyTarget('PC2', 'PC'),
         accumulatedTimePrice: 100
+    }), false);
+    assert.equal(isTransferTargetAvailable({
+        ...emptyTarget('PC2', 'PC'),
+        freeTimeUntil: Date.now() + 60_000
     }), false);
 
     assert.throws(() => createDeviceTransferPlan(
@@ -133,6 +164,7 @@ test('expired timed sessions cannot be transferred across device types', () => {
         status: 'timed',
         startTime: 1000,
         durationLimit: 1,
+        freeTimeUntil: null,
         purchases: [],
         pastSessions: []
     };

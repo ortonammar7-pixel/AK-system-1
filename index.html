@@ -233,6 +233,7 @@
                 <label for="extraMinutesInput">دقائق إضافية:</label>
                 <input type="number" id="extraMinutesInput" value="10" min="1" step="1" aria-label="عدد الدقائق الإضافية">
             </div>
+            <p style="margin:0;color:#c5c9d6;">للوقت المحدد تُضاف إلى المدة، وللوقت المفتوح تمنح فترة سماح قبل بدء الاحتساب.</p>
         </div>
         <button class="btn btn-danger" onclick="window.closeModal('startModal')" style="width: 100%;">إلغاء</button>
     </dialog>
@@ -314,7 +315,7 @@
         import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
         import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
         import { createDeviceTransferPlan, isTransferTargetAvailable } from "./device-transfer.mjs";
-        import { calculateTimedSessionDuration } from "./session-duration.mjs";
+        import { calculateTimedSessionDuration, getAdditionalMinutes, getOpenSessionBillableMinutes, getOpenSessionDisplaySeconds } from "./session-duration.mjs";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDEof31VeMcWPIcPd6FSOzxYenOnLjEfgA",
@@ -351,7 +352,9 @@
                 ? device.startTime + device.durationLimit * 60000
                 : endTime;
             const effectiveEnd = Math.min(endTime, scheduledEnd);
-            const playedMinutes = Math.max(0, (effectiveEnd - device.startTime) / 60000);
+            const playedMinutes = device.status === 'open'
+                ? getOpenSessionBillableMinutes(device.startTime, device.freeTimeUntil, effectiveEnd)
+                : Math.max(0, (effectiveEnd - device.startTime) / 60000);
             const blockMinutes = RATE_BLOCK_MINUTES[device.type];
             return blockMinutes ? Math.floor(playedMinutes / blockMinutes) * RATE_BLOCK_PRICE : 0;
         }
@@ -388,7 +391,8 @@
             const newSession = {
                 startTime: device.startTime,
                 endTime: Math.min(endTime, scheduledEnd),
-                price: sessionPrice
+                price: sessionPrice,
+                ...(device.freeTimeUntil ? { freeTimeUntil: device.freeTimeUntil } : {})
             };
             
             const pastSessions = device.pastSessions ? [...device.pastSessions] : [];
@@ -495,10 +499,10 @@
         function initializeDevicesDatabase() {
             const initialDevices = {};
             for (let i = 1; i <= 14; i++) {
-                initialDevices[`PC${i}`] = { name: `PC ${i}`, type: 'PC', status: 'vacant', startTime: null, durationLimit: null, accumulatedTimePrice: 0, purchases: [], pastSessions: [] };
+                initialDevices[`PC${i}`] = { name: `PC ${i}`, type: 'PC', status: 'vacant', startTime: null, durationLimit: null, freeTimeUntil: null, accumulatedTimePrice: 0, purchases: [], pastSessions: [] };
             }
             for (let i = 1; i <= 4; i++) { 
-                initialDevices[`PS5${i}`] = { name: `PS5 ${i}`, type: 'PS5', status: 'vacant', startTime: null, durationLimit: null, accumulatedTimePrice: 0, purchases: [], pastSessions: [] };
+                initialDevices[`PS5${i}`] = { name: `PS5 ${i}`, type: 'PS5', status: 'vacant', startTime: null, durationLimit: null, freeTimeUntil: null, accumulatedTimePrice: 0, purchases: [], pastSessions: [] };
             }
             set(ref(db, 'devices'), initialDevices);
         }
@@ -552,7 +556,10 @@
                     const timeDiffSeconds = Math.floor((now - device.startTime) / 1000);
 
                     if (device.status === 'open') {
-                        timeEl.innerText = formatTime(timeDiffSeconds);
+                        const openTime = getOpenSessionDisplaySeconds(device.startTime, device.freeTimeUntil, now);
+                        timeEl.innerText = openTime.label
+                            ? `${openTime.label} ${formatTime(openTime.seconds)}`
+                            : formatTime(openTime.seconds);
                     } else if (device.status === 'timed') {
                         const limitSeconds = device.durationLimit * 60;
                         const remainingSeconds = limitSeconds - timeDiffSeconds;
@@ -595,6 +602,7 @@
                 [`devices/${device.id}/status`]: 'locked',
                 [`devices/${device.id}/startTime`]: null,
                 [`devices/${device.id}/durationLimit`]: null,
+                [`devices/${device.id}/freeTimeUntil`]: null,
                 [`devices/${device.id}/pastSessions`]: pastSessions
             }).then(() => {
                 device.status = 'locked';
@@ -638,21 +646,37 @@
             if (!device) return alert('تعذر العثور على الجهاز.');
             if (pendingAccountWrites.has(device.id)) return alert('هناك عملية حساب جارية على الجهاز؛ انتظر اكتمالها ثم أعد المحاولة.');
             let limit = null;
-            if (type === 'timed') {
-                const minutes = Number(document.getElementById('minutesInput').value);
-                const extraTimeEnabled = document.getElementById('extraTimeToggle').getAttribute('aria-pressed') === 'true';
-                const extraMinutes = extraTimeEnabled ? Number(document.getElementById('extraMinutesInput').value) : 0;
-                try {
-                    limit = calculateTimedSessionDuration(minutes, extraTimeEnabled, extraMinutes);
-                } catch (error) {
-                    return alert(error.message);
+            let extraMinutes;
+            try {
+                extraMinutes = getAdditionalMinutes(
+                    document.getElementById('extraTimeToggle').getAttribute('aria-pressed') === 'true',
+                    Number(document.getElementById('extraMinutesInput').value)
+                );
+                if (type === 'timed') {
+                    limit = calculateTimedSessionDuration(
+                        Number(document.getElementById('minutesInput').value),
+                        extraMinutes > 0,
+                        extraMinutes
+                    );
                 }
+            } catch (error) {
+                return alert(error.message);
             }
 
-            const pastSessions = device.startTime ? saveSessionToPast(device, Date.now()) : (device.pastSessions || []);
-
+            const startTime = Date.now();
+            const freeTimeUntil = type === 'open' && extraMinutes > 0
+                ? startTime + extraMinutes * 60000
+                : null;
+            if (freeTimeUntil !== null && (!Number.isSafeInteger(freeTimeUntil) || freeTimeUntil > 8.64e15)) {
+                return alert('عدد الدقائق الإضافية كبير جداً');
+            }
+            const pastSessions = device.startTime ? saveSessionToPast(device, startTime) : (device.pastSessions || []);
             update(ref(db, `devices/${currentSelectedDeviceId}`), {
-                status: type, startTime: Date.now(), durationLimit: limit, pastSessions: pastSessions
+                status: type,
+                startTime,
+                durationLimit: limit,
+                freeTimeUntil,
+                pastSessions
             });
             window.closeModal('startModal');
         };
@@ -818,7 +842,7 @@
                     : now;
                 items.push({
                     type: 'active',
-                    name: `${device.status === 'timed' ? 'جلسة محددة' : 'جلسة مفتوحة'} — بدأت ${formatDateTime(device.startTime)}${device.status === 'timed' ? `، تنتهي ${formatDateTime(device.startTime + device.durationLimit * 60000)}` : ''}`,
+                    name: `${device.status === 'timed' ? 'جلسة محددة' : 'جلسة مفتوحة'} — بدأت ${formatDateTime(device.startTime)}${device.status === 'timed' ? `، تنتهي ${formatDateTime(device.startTime + device.durationLimit * 60000)}` : device.freeTimeUntil > now ? `، وقت إضافي حتى ${formatDateTime(device.freeTimeUntil)}` : ''}`,
                     price: calculateSessionPrice(device, now),
                     startTime: device.startTime,
                     endTime
@@ -902,6 +926,7 @@
                 [`devices/${device.id}/status`]: 'vacant',
                 [`devices/${device.id}/startTime`]: null,
                 [`devices/${device.id}/durationLimit`]: null,
+                [`devices/${device.id}/freeTimeUntil`]: null,
                 [`devices/${device.id}/accumulatedTimePrice`]: 0,
                 [`devices/${device.id}/purchases`]: [],
                 [`devices/${device.id}/pastSessions`]: []
@@ -934,6 +959,7 @@
                     [`devices/${device.id}/status`]: 'locked',
                     [`devices/${device.id}/startTime`]: null,
                     [`devices/${device.id}/durationLimit`]: null,
+                    [`devices/${device.id}/freeTimeUntil`]: null,
                     [`devices/${device.id}/pastSessions`]: pastSessions
                 }).then(() => window.closeModal('billModal'))
                     .catch(error => alert(`تعذر حفظ إيقاف الجلسة: ${error.message}`));
@@ -973,6 +999,7 @@
                 updates[`devices/${id}/status`] = 'locked';
                 updates[`devices/${id}/startTime`] = null;
                 updates[`devices/${id}/durationLimit`] = null;
+                updates[`devices/${id}/freeTimeUntil`] = null;
                 if (device.startTime) {
                     updates[`devices/${id}/pastSessions`] = saveSessionToPast(device, endTime);
                     const scheduledEnd = device.status === 'timed' && device.durationLimit
@@ -1068,6 +1095,7 @@
                     <div>${details.mode === 'same_type' ? 'نُقلت الجلسة كما هي.' : 'بدأت جلسة جديدة على الجهاز الهدف.'} | وضع الجلسة: ${session.status === 'timed' ? 'وقت محدد' : 'وقت مفتوح'}</div>
                     <div>وقت النقل: ${formatFullDateTime(details.transferredAt)} | بداية الجلسة قبل النقل: ${formatFullDateTime(session.startTime)}${session.status === 'timed' ? ` | المدة الأصلية: ${Number(session.durationLimit) || 0} دقيقة` : ''}</div>
                     <div>بداية الجلسة على الهدف: ${formatFullDateTime(targetSession.startTime)}${targetSession.status === 'timed' ? ` | المدة المتبقية: ${Number(targetSession.durationLimit) || 0} دقيقة` : ''}</div>
+                    ${targetSession.status === 'open' && targetSession.freeTimeUntil > details.transferredAt ? `<div>فترة السماح المتبقية على الهدف: ${Math.ceil((targetSession.freeTimeUntil - details.transferredAt) / 60000)} دقيقة</div>` : ''}
                     ${accruedSession ? `<div>الوقت المستحق على المصدر: ${formatFullDateTime(accruedSession.startTime)} — ${formatFullDateTime(accruedSession.endTime)} | ${Number(accruedSession.price) || 0} د.ع</div>` : ''}
                     <div>المتبقي المتراكم: ${Number(details.movedAccount?.accumulatedTimePrice) || 0} د.ع</div>
                     <div class="revenue-detail-list">${movedSessions}${movedPurchases}</div>`;

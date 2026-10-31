@@ -8,6 +8,7 @@ export function isTransferTargetAvailable(device) {
         device.status === 'vacant' &&
         device.startTime == null &&
         device.durationLimit == null &&
+        device.freeTimeUntil == null &&
         Number(device.accumulatedTimePrice) === 0 &&
         !hasEntries(device.purchases) &&
         !hasEntries(device.pastSessions);
@@ -24,6 +25,7 @@ export function createDeviceTransferPlan(source, target, transferredAt, calculat
     const sameType = source.type === target.type;
     let targetStartTime = source.startTime;
     let targetDurationLimit = source.durationLimit ?? null;
+    let targetFreeTimeUntil = source.freeTimeUntil ?? null;
     const pastSessions = [...(source.pastSessions || [])];
     let transferredSession = null;
 
@@ -44,11 +46,15 @@ export function createDeviceTransferPlan(source, target, transferredAt, calculat
         transferredSession = {
             startTime: source.startTime,
             endTime: Math.min(transferredAt, scheduledEnd),
-            price: calculateSessionPrice(source, transferredAt)
+            price: calculateSessionPrice(source, transferredAt),
+            ...(source.freeTimeUntil ? { freeTimeUntil: source.freeTimeUntil } : {})
         };
         pastSessions.push(transferredSession);
         targetStartTime = transferredAt;
         targetDurationLimit = remainingMinutes;
+        targetFreeTimeUntil = source.status === 'open' && Number(source.freeTimeUntil) > transferredAt
+            ? Number(source.freeTimeUntil)
+            : null;
     }
 
     return {
@@ -57,6 +63,7 @@ export function createDeviceTransferPlan(source, target, transferredAt, calculat
             status: 'vacant',
             startTime: null,
             durationLimit: null,
+            freeTimeUntil: null,
             accumulatedTimePrice: 0,
             purchases: [],
             pastSessions: []
@@ -65,6 +72,7 @@ export function createDeviceTransferPlan(source, target, transferredAt, calculat
             status: source.status,
             startTime: targetStartTime,
             durationLimit: targetDurationLimit,
+            freeTimeUntil: targetFreeTimeUntil,
             accumulatedTimePrice: Number(source.accumulatedTimePrice) || 0,
             purchases: [...(source.purchases || [])],
             pastSessions
@@ -76,12 +84,14 @@ export function createDeviceTransferPlan(source, target, transferredAt, calculat
                 status: source.status,
                 startTime: source.startTime,
                 durationLimit: source.durationLimit ?? null,
+                freeTimeUntil: source.freeTimeUntil ?? null,
                 accruedSession: transferredSession
             },
             targetSession: {
                 status: source.status,
                 startTime: targetStartTime,
-                durationLimit: targetDurationLimit
+                durationLimit: targetDurationLimit,
+                freeTimeUntil: targetFreeTimeUntil
             },
             movedAccount: {
                 accumulatedTimePrice: Number(source.accumulatedTimePrice) || 0,
