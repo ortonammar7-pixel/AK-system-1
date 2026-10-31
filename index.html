@@ -107,7 +107,7 @@
         }
 
         .device-time { font-size: 1.1rem; font-weight: bold; font-family: 'Courier New', Courier, monospace; margin: 8px 0; background: rgba(0, 0, 0, 0.6); padding: 6px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.1); }
-        .card-actions { display: flex; justify-content: center; gap: 6px; margin-top: 10px; }
+        .card-actions { display: flex; justify-content: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 
         .btn { padding: 6px 10px; border: 1px solid transparent; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.9rem; transition: all 0.2s; background: transparent; color: white; }
         .btn-primary { border-color: var(--neon-blue); box-shadow: 0 0 8px rgba(0, 229, 255, 0.3); }
@@ -125,7 +125,7 @@
         dialog::backdrop { background-color: rgba(0, 0, 0, 0.8); }
 
         .modal-body { display: flex; flex-direction: column; gap: 12px; margin: 15px 0; }
-        input[type="text"], input[type="number"], input[type="file"] { padding: 8px; border-radius: 6px; border: 1px solid var(--neon-purple); background: #000; color: var(--neon-blue); font-size: 1rem; outline: none; }
+        input[type="text"], input[type="number"], input[type="file"], select { padding: 8px; border-radius: 6px; border: 1px solid var(--neon-purple); background: #000; color: var(--neon-blue); font-size: 1rem; outline: none; }
         
         .time-input-group, .add-product-group { display: flex; gap: 10px; align-items: center; }
         .time-input-group input, .add-product-group input { flex: 1; text-align: center; }
@@ -265,6 +265,18 @@
         <button class="btn btn-secondary" onclick="window.closeModal('billModal')" style="width: 100%;">إغلاق</button>
     </dialog>
 
+    <dialog id="transferModal">
+        <h2>تغيير الجهاز</h2>
+        <div class="modal-body">
+            <p id="transferSourceInfo" style="margin:0;"></p>
+            <label for="transferTarget">الجهاز الهدف الشاغر:</label>
+            <select id="transferTarget" onchange="window.updateTransferSummary()"></select>
+            <p id="transferSummary" style="margin:0;color:#c5c9d6;line-height:1.7;"></p>
+            <button id="confirmTransferBtn" class="btn btn-warning" onclick="window.transferAccount()">تأكيد تغيير الجهاز 🔄</button>
+        </div>
+        <button class="btn btn-secondary" onclick="window.closeModal('transferModal')" style="width:100%;">إلغاء</button>
+    </dialog>
+
     <!-- 5. نافذة الإنهاء الجماعي -->
     <dialog id="bulkModal">
         <h2>إيقاف الأجهزة المحددة</h2>
@@ -296,6 +308,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getDatabase, ref, set, onValue, update, push, remove } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
         import { getStorage, ref as storageRef, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+        import { createDeviceTransferPlan, isTransferTargetAvailable } from "./device-transfer.mjs";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDEof31VeMcWPIcPd6FSOzxYenOnLjEfgA",
@@ -353,10 +366,10 @@
             })[char]);
         }
 
-        function createLedgerEntry(entry) {
+        function createLedgerEntry(entry, timestamp = Date.now()) {
             const id = push(ref(db, 'revenueLog')).key;
             if (!id) throw new Error('تعذر إنشاء معرّف سجل الأرباح');
-            return { [`revenueLog/${id}`]: { ...entry, timestamp: Date.now() } };
+            return { [`revenueLog/${id}`]: { ...entry, timestamp } };
         }
 
         // حفظ جلسة اللعب كبند منفصل في الفاتورة
@@ -515,6 +528,7 @@
                     <div class="card-actions">
                         <button class="btn btn-secondary" onclick="window.openPurchasesModal('${device.id}')">🛒</button>
                         <button class="btn btn-primary" onclick="window.openBillModal('${device.id}')">🧾</button>
+                        <button class="btn btn-warning" title="تغيير الجهاز" aria-label="تغيير الجهاز" onclick="window.openTransferModal('${device.id}')">🔄 نقل</button>
                     </div>
                 `;
                 grid.appendChild(card);
@@ -557,7 +571,7 @@
         }, 1000);
 
         function lockExpiredDevice(device) {
-            if (device.status === 'locked' || expiringDeviceIds.has(device.id)) return;
+            if (device.status === 'locked' || expiringDeviceIds.has(device.id) || pendingAccountWrites.has(device.id)) return;
             expiringDeviceIds.add(device.id);
             const endTime = Date.now();
             const pastSessions = saveSessionToPast(device, endTime);
@@ -600,6 +614,8 @@
 
         window.startSession = (type) => {
             const device = devices.find(d => d.id === currentSelectedDeviceId);
+            if (!device) return alert('تعذر العثور على الجهاز.');
+            if (pendingAccountWrites.has(device.id)) return alert('هناك عملية حساب جارية على الجهاز؛ انتظر اكتمالها ثم أعد المحاولة.');
             let limit = null;
             if (type === 'timed') {
                 limit = parseInt(document.getElementById('minutesInput').value);
@@ -619,10 +635,120 @@
             document.getElementById('purchasesModal').showModal();
         };
 
+        let currentTransferSourceId = null;
+
+        window.openTransferModal = (sourceId) => {
+            const source = devices.find(device => device.id === sourceId);
+            if (!source) return alert('تعذر العثور على الجهاز.');
+            if (pendingAccountWrites.has(source.id)) {
+                return alert('هناك عملية حساب جارية على الجهاز؛ انتظر اكتمالها ثم أعد المحاولة.');
+            }
+            if (source.status !== 'open' && source.status !== 'timed') {
+                return alert(source.status === 'locked'
+                    ? 'الجهاز مقفل ولديه حساب محفوظ؛ لن يتم حذف الحساب. ابدأ جلسة جديدة أو صفِّ الحساب قبل النقل.'
+                    : 'لا توجد جلسة نشطة لنقلها من هذا الجهاز.');
+            }
+            if (!source.startTime) return alert('تعذر العثور على بداية الجلسة؛ لم يتم تغيير أي حساب.');
+
+            const targets = devices.filter(device =>
+                device.id !== source.id && isTransferTargetAvailable(device));
+            if (targets.length === 0) {
+                return alert('لا يوجد جهاز شاغر وخالٍ من الحسابات لنقل الجلسة إليه.');
+            }
+
+            currentTransferSourceId = source.id;
+            document.getElementById('transferSourceInfo').innerText =
+                `نقل الحساب من ${source.name} (${source.type})`;
+            document.getElementById('transferTarget').innerHTML = targets.map(target =>
+                `<option value="${escapeHtml(target.id)}">${escapeHtml(target.name)} (${escapeHtml(target.type)})</option>`
+            ).join('');
+            window.updateTransferSummary();
+            document.getElementById('transferModal').showModal();
+        };
+
+        window.updateTransferSummary = () => {
+            const source = devices.find(device => device.id === currentTransferSourceId);
+            const target = devices.find(device => device.id === document.getElementById('transferTarget').value);
+            const summary = document.getElementById('transferSummary');
+            const confirmButton = document.getElementById('confirmTransferBtn');
+            if (!source || !target || !isTransferTargetAvailable(target)) {
+                summary.innerText = 'لم يعد الجهاز الهدف شاغراً؛ اختر جهازاً آخر.';
+                confirmButton.disabled = true;
+                return;
+            }
+            confirmButton.disabled = false;
+            summary.innerText = source.type === target.type
+                ? 'سيبقى الحساب والجلسة ووقت البداية والمدة كما هي، وستُنقل المشتريات والفواتير إلى الجهاز الجديد.'
+                : 'سيُسجّل وقت الجهاز الحالي كمبلغ مستحق بسعره، وتُنقل المشتريات والفواتير، ثم تبدأ جلسة جديدة على الجهاز الهدف مع الحفاظ على وضع الجلسة والوقت المحدد المتبقي.';
+        };
+
+        window.transferAccount = () => {
+            const source = devices.find(device => device.id === currentTransferSourceId);
+            const targetId = document.getElementById('transferTarget').value;
+            const target = devices.find(device => device.id === targetId);
+            if (!source || !target) return alert('تعذر العثور على الجهاز المصدر أو الهدف.');
+            if (pendingAccountWrites.has(source.id) || pendingAccountWrites.has(target.id)) {
+                return alert('هناك عملية حساب جارية على أحد الجهازين؛ انتظر اكتمالها ثم أعد المحاولة.');
+            }
+
+            const transferredAt = Date.now();
+            let plan;
+            try {
+                plan = createDeviceTransferPlan(
+                    source,
+                    target,
+                    transferredAt,
+                    (device, endTime) => calculateSessionPrice(device, endTime)
+                );
+            } catch (error) {
+                return alert(error.message);
+            }
+
+            pendingAccountWrites.add(source.id);
+            pendingAccountWrites.add(target.id);
+            try {
+                const updates = {
+                    ...createLedgerEntry({
+                        type: 'account_transfer',
+                        deviceId: source.id,
+                        deviceName: `${source.name} ← ${target.name}`,
+                        deviceType: source.type,
+                        amount: plan.amount,
+                        revenueAmount: 0,
+                        details: {
+                            ...plan.details,
+                            sourceDevice: { id: source.id, name: source.name, type: source.type },
+                            targetDevice: { id: target.id, name: target.name, type: target.type },
+                            accruedAmount: plan.amount
+                        }
+                    }, transferredAt)
+                };
+                Object.entries(plan.sourceUpdates).forEach(([field, value]) => {
+                    updates[`devices/${source.id}/${field}`] = value;
+                });
+                Object.entries(plan.targetUpdates).forEach(([field, value]) => {
+                    updates[`devices/${target.id}/${field}`] = value;
+                });
+
+                update(ref(db, '/'), updates)
+                    .then(() => window.closeModal('transferModal'))
+                    .catch(error => alert(`تعذر نقل الحساب؛ لم يتم تأكيد النقل: ${error.message}`))
+                    .finally(() => {
+                        pendingAccountWrites.delete(source.id);
+                        pendingAccountWrites.delete(target.id);
+                    });
+            } catch (error) {
+                pendingAccountWrites.delete(source.id);
+                pendingAccountWrites.delete(target.id);
+                alert(`تعذر إعداد نقل الحساب: ${error.message}`);
+            }
+        };
+
         window.addPurchase = (productId) => {
             const device = devices.find(d => d.id === currentSelectedDeviceId);
             const product = products.find(p => p.id === productId);
             if (!device || !product) return alert('تعذر العثور على الجهاز أو المنتج.');
+            if (pendingAccountWrites.has(device.id)) return alert('هناك عملية حساب جارية على الجهاز؛ انتظر اكتمالها ثم أعد المحاولة.');
             const purchase = { name: product.name, price: Number(product.price), timestamp: Date.now() };
             const currentPurchases = [...(device.purchases || []), purchase];
             const entry = createLedgerEntry({
@@ -759,6 +885,8 @@
 
         window.stopActiveSession = () => {
             const device = devices.find(d => d.id === currentSelectedDeviceId);
+            if (!device) return alert('تعذر العثور على الجهاز.');
+            if (pendingAccountWrites.has(device.id)) return alert('هناك عملية حساب جارية على الجهاز؛ انتظر اكتمالها ثم أعد المحاولة.');
             if (device.startTime) {
                 const endTime = Date.now();
                 const pastSessions = saveSessionToPast(device, endTime);
@@ -807,6 +935,9 @@
         };
 
         window.executeBulkStop = () => {
+            if ([...selectedDeviceIds].some(id => pendingAccountWrites.has(id))) {
+                return alert('هناك عملية حساب جارية على أحد الأجهزة المحددة؛ انتظر اكتمالها ثم أعد المحاولة.');
+            }
             const updates = {};
             selectedDeviceIds.forEach(id => {
                 const device = devices.find(d => d.id === id);
@@ -888,6 +1019,32 @@
             if (entry.type === 'account_reset') {
                 return `<div>تصفير حساب - المبلغ المتنازل عنه: ${Number(details.writtenOffAmount ?? entry.amount) || 0} د.ع</div>`;
             }
+            if (entry.type === 'account_transfer') {
+                const source = details.sourceDevice || {};
+                const target = details.targetDevice || {};
+                const session = details.sourceSession || {};
+                const targetSession = details.targetSession || {};
+                const accruedSession = session.accruedSession;
+                const purchases = details.movedAccount?.purchases || [];
+                const pastSessions = details.movedAccount?.pastSessions || [];
+                const movedPurchases = purchases.length
+                    ? purchases.map(purchase =>
+                        `<div class="revenue-detail-row"><span>مشتريات منقولة: ${escapeHtml(purchase.name || 'منتج')}</span><strong>${Number(purchase.price) || 0} د.ع</strong></div>`
+                    ).join('')
+                    : '<div>لا توجد مشتريات منقولة.</div>';
+                const movedSessions = pastSessions.length
+                    ? pastSessions.map(pastSession =>
+                        `<div class="revenue-detail-row"><span>جلسة سابقة: ${formatFullDateTime(pastSession.startTime)} — ${formatFullDateTime(pastSession.endTime)}</span><strong>${Number(pastSession.price) || 0} د.ع</strong></div>`
+                    ).join('')
+                    : '<div>لا توجد جلسات سابقة منقولة.</div>';
+                return `<div>من ${escapeHtml(source.name || entry.deviceName || 'غير محدد')} (${escapeHtml(source.type || '')}) إلى ${escapeHtml(target.name || 'غير محدد')} (${escapeHtml(target.type || '')})</div>
+                    <div>${details.mode === 'same_type' ? 'نُقلت الجلسة كما هي.' : 'بدأت جلسة جديدة على الجهاز الهدف.'} | وضع الجلسة: ${session.status === 'timed' ? 'وقت محدد' : 'وقت مفتوح'}</div>
+                    <div>وقت النقل: ${formatFullDateTime(details.transferredAt)} | بداية الجلسة قبل النقل: ${formatFullDateTime(session.startTime)}${session.status === 'timed' ? ` | المدة الأصلية: ${Number(session.durationLimit) || 0} دقيقة` : ''}</div>
+                    <div>بداية الجلسة على الهدف: ${formatFullDateTime(targetSession.startTime)}${targetSession.status === 'timed' ? ` | المدة المتبقية: ${Number(targetSession.durationLimit) || 0} دقيقة` : ''}</div>
+                    ${accruedSession ? `<div>الوقت المستحق على المصدر: ${formatFullDateTime(accruedSession.startTime)} — ${formatFullDateTime(accruedSession.endTime)} | ${Number(accruedSession.price) || 0} د.ع</div>` : ''}
+                    <div>المتبقي المتراكم: ${Number(details.movedAccount?.accumulatedTimePrice) || 0} د.ع</div>
+                    <div class="revenue-detail-list">${movedSessions}${movedPurchases}</div>`;
+            }
             return '<div>لا توجد تفاصيل إضافية.</div>';
         }
 
@@ -903,7 +1060,8 @@
                 payment: 'دفع مقبوض',
                 purchase_added: 'إضافة مشتريات (غير مدفوعة)',
                 session_accrued: 'احتساب جلسة (غير مقبوضة)',
-                account_reset: 'تصفير / مبلغ متنازل عنه'
+                account_reset: 'تصفير / مبلغ متنازل عنه',
+                account_transfer: 'نقل حساب بين الأجهزة (غير مقبوض)'
             };
             const list = document.getElementById('revenueEntries');
             list.innerHTML = recentEntries
