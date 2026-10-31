@@ -21,17 +21,26 @@ test('rejects invalid base or enabled extra minutes', () => {
     assert.throws(() => calculateTimedSessionDuration(60, true, 1.5), /الدقائق الإضافية/);
 });
 
-test('open-session extra time is displayed as a grace countdown and is not billed', () => {
+test('open-session extra time is added to elapsed and billable time immediately', () => {
     const startedAt = 1_000_000;
-    const freeTimeUntil = startedAt + 10 * 60_000;
-    assert.deepEqual(getOpenSessionDisplaySeconds(startedAt, freeTimeUntil, startedAt + 30_000), {
-        label: 'وقت إضافي',
-        seconds: 570
-    });
-    assert.equal(getOpenSessionBillableMinutes(startedAt, freeTimeUntil, freeTimeUntil), 0);
-    assert.equal(getOpenSessionBillableMinutes(startedAt, freeTimeUntil, freeTimeUntil + 10 * 60_000), 10);
-    assert.deepEqual(getOpenSessionDisplaySeconds(startedAt, freeTimeUntil, freeTimeUntil + 30_000), {
+    const delayMinutes = 10;
+    assert.deepEqual(getOpenSessionDisplaySeconds(startedAt, delayMinutes, startedAt + 30_000), {
         label: '',
-        seconds: 30
+        seconds: 630
     });
+    assert.equal(getOpenSessionBillableMinutes(startedAt, delayMinutes, startedAt + 30_000), 10.5);
+    assert.deepEqual(getOpenSessionDisplaySeconds(startedAt, delayMinutes, startedAt + 10 * 60_000), {
+        label: '',
+        seconds: 1200
+    });
+});
+
+test('legacy open-session grace values become elapsed-time offsets', () => {
+    const startedAt = 1_000_000;
+    const legacyFreeTimeUntil = startedAt + 10 * 60_000;
+    assert.deepEqual(getOpenSessionDisplaySeconds(startedAt, 0, startedAt + 30_000, legacyFreeTimeUntil), {
+        label: '',
+        seconds: 630
+    });
+    assert.equal(getOpenSessionBillableMinutes(startedAt, 0, startedAt + 30_000, legacyFreeTimeUntil), 10.5);
 });
