@@ -467,7 +467,7 @@
                     <div class="accounting-selected" id="accountingSelectedCount">لم يتم تحديد حسابات</div>
                     <div class="accounting-grand-total" id="accountingGrandTotal">0 د.ع</div>
                 </div>
-                <button class="btn accounting-pay" onclick="window.payAccountingSelection()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg>دفع المحدد وتصفير الأجهزة</button>
+                <button class="btn accounting-pay" onclick="window.payAccountingSelection()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg>دفع البند المحدد</button>
             </footer>
         </div>
     </dialog>
@@ -1242,8 +1242,7 @@
             } else {
                 accountingSelection = new Map();
                 pendingDevices.forEach(device => {
-                    const items = buildBillItems(device);
-                    accountingSelection.set(device.id, new Set(items.map(item => item.key)));
+                    accountingSelection.set(device.id, new Set());
                 });
                 list.innerHTML = pendingDevices.map(device => {
                     const statusText = { vacant: 'شاغر', open: 'وقت مفتوح', timed: 'وقت محدد', locked: 'مقفل' }[device.status] || device.status;
@@ -1254,7 +1253,7 @@
                     const details = items.length
                         ? items.map(item => `
                             <label class="account-item">
-                                <input type="checkbox" ${running ? 'checked disabled' : 'checked'} onchange="window.toggleAccountingItem('${device.id}', '${item.key}', this.checked)">
+                                <input type="checkbox" onchange="window.toggleAccountingItem('${device.id}', '${item.key}', this.checked)">
                                 <span class="account-item-name">${escapeHtml(item.name)}</span>
                                 <span class="account-item-price">${item.price} د.ع</span>
                             </label>
@@ -1284,7 +1283,7 @@
 
         window.toggleAccountingItem = (deviceId, itemKey, checked) => {
             const device = devices.find(item => item.id === deviceId);
-            if (!device || device.status === 'open' || device.status === 'timed') return;
+            if (!device) return;
             if (!accountingSelection.has(deviceId)) accountingSelection.set(deviceId, new Set());
             const selected = accountingSelection.get(deviceId);
             checked ? selected.add(itemKey) : selected.delete(itemKey);
@@ -1354,14 +1353,30 @@
 
                 const running = device.status === 'open' || device.status === 'timed';
                 if (running) {
-                    updates[`devices/${device.id}/status`] = 'vacant';
-                    updates[`devices/${device.id}/startTime`] = null;
-                    updates[`devices/${device.id}/durationLimit`] = null;
-                    updates[`devices/${device.id}/freeTimeUntil`] = null;
-                    updates[`devices/${device.id}/startOffsetMinutes`] = 0;
-                    updates[`devices/${device.id}/accumulatedTimePrice`] = 0;
-                    updates[`devices/${device.id}/purchases`] = [];
-                    updates[`devices/${device.id}/pastSessions`] = [];
+                    const activeSelected = selectedKeys.has('active');
+                    const remainingPastSessions = (device.pastSessions || []).filter((session, index) =>
+                        !selectedKeys.has(`session:${index}`)
+                    );
+                    const remainingPurchases = (device.purchases || []).filter((purchase, index) =>
+                        !selectedKeys.has(`purchase:${index}`)
+                    );
+                    const remainingAccumulated = selectedKeys.has('legacy')
+                        ? 0
+                        : (Number(device.accumulatedTimePrice) || 0);
+                    updates[`devices/${device.id}/pastSessions`] = remainingPastSessions;
+                    updates[`devices/${device.id}/purchases`] = remainingPurchases;
+                    updates[`devices/${device.id}/accumulatedTimePrice`] = remainingAccumulated;
+
+                    if (activeSelected) {
+                        const remainingItemsExist = remainingPastSessions.length > 0 ||
+                            remainingPurchases.length > 0 ||
+                            remainingAccumulated > 0;
+                        updates[`devices/${device.id}/status`] = remainingItemsExist ? 'locked' : 'vacant';
+                        updates[`devices/${device.id}/startTime`] = null;
+                        updates[`devices/${device.id}/durationLimit`] = null;
+                        updates[`devices/${device.id}/freeTimeUntil`] = null;
+                        updates[`devices/${device.id}/startOffsetMinutes`] = 0;
+                    }
                     return;
                 }
 
