@@ -60,6 +60,73 @@
         .purchase-card { min-height: 84px; display: flex; flex-direction: column; justify-content: center; gap: 8px; text-align: center; border-radius: 10px; background: rgba(0, 0, 0, 0.6); }
         .wide-modal { width: min(900px, 94vw); max-height: 85vh; overflow-y: auto; }
         .accounting-device { background: rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; padding: 12px; margin-bottom: 10px; line-height: 1.8; }
+        .accounting-screen {
+            --account-ink: #263547;
+            --account-muted: #748396;
+            --account-green: #19866a;
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            max-width: none;
+            max-height: none;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            overflow: hidden;
+            background: #f3f6f7;
+            color: var(--account-ink);
+            box-shadow: none;
+        }
+        .accounting-screen::backdrop { background: rgba(16, 28, 40, 0.68); }
+        .accounting-layout { display: flex; flex-direction: column; width: 100%; height: 100%; background: radial-gradient(ellipse at 90% 0%, #e5f2ee 0, transparent 38%), #f3f6f7; }
+        .accounting-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px clamp(18px, 4vw, 56px); background: rgba(255, 255, 255, 0.92); border-bottom: 1px solid #e4e9ec; }
+        .accounting-heading { display: flex; align-items: center; gap: 12px; }
+        .accounting-heading-icon { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 13px; background: #e2f2eb; color: var(--account-green); }
+        .accounting-heading h2 { margin: 0; font-size: clamp(1.25rem, 3vw, 1.75rem); }
+        .accounting-heading p { margin: 3px 0 0; color: var(--account-muted); font-size: 0.88rem; }
+        .accounting-close { min-width: 96px; border: 0; border-radius: 11px; background: #edf1f3; color: #394b5a; }
+        .accounting-close:hover { background: #e2e8eb; }
+        .accounting-content { width: min(1320px, 100%); box-sizing: border-box; margin: 0 auto; padding: 22px clamp(14px, 4vw, 48px) 112px; flex: 1; overflow-y: auto; }
+        .accounting-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 14px; }
+        .account-device-card { box-sizing: border-box; min-width: 0; border: 1px solid #dde6e3; border-radius: 16px; background: #fff; box-shadow: 0 8px 24px rgba(38, 53, 71, 0.055); overflow: hidden; }
+        .account-device-card.active { border-color: #8dd5bd; box-shadow: 0 10px 28px rgba(25, 134, 106, 0.12); }
+        .account-device-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 16px; background: #f8faf9; border-bottom: 1px solid #edf0ef; }
+        .account-device-name { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--account-ink); font-size: 1.05rem; font-weight: 850; }
+        .account-device-name span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .account-status { flex: 0 0 auto; border-radius: 999px; padding: 5px 9px; background: #edf1f3; color: #607181; font-size: 0.76rem; font-weight: 800; }
+        .account-status.running { background: #dff4ea; color: #19755f; }
+        .account-status.stopped { background: #fff0d7; color: #9a6817; }
+        .account-device-body { padding: 12px 16px 14px; }
+        .account-mode { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 9px 10px; border-radius: 10px; background: #edf7f3; color: #3c665a; font-size: 0.86rem; font-weight: 800; }
+        .account-mode.running { background: #fff5df; color: #8a621c; }
+        .account-items { display: flex; flex-direction: column; gap: 7px; max-height: 220px; overflow-y: auto; }
+        .account-item { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 38px; padding: 7px 8px; border: 1px solid #edf0f1; border-radius: 9px; background: #fff; cursor: pointer; }
+        .account-item:hover { border-color: #b8d8cd; background: #fafcfb; }
+        .account-item input { width: 17px; height: 17px; margin: 0; accent-color: var(--account-green); cursor: pointer; }
+        .account-item-name { min-width: 0; color: #526477; font-size: 0.88rem; line-height: 1.45; }
+        .account-item-price { color: #3f5d70; font-size: 0.88rem; font-weight: 850; direction: ltr; white-space: nowrap; }
+        .account-card-total { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 11px; padding-top: 10px; border-top: 1px solid #edf0ef; color: var(--account-muted); font-size: 0.88rem; }
+        .account-card-total strong { color: var(--account-green); font-size: 1.05rem; direction: ltr; }
+        .accounting-footer { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px clamp(18px, 4vw, 56px); border-top: 1px solid #dfe7e4; background: rgba(255, 255, 255, 0.96); box-shadow: 0 -10px 30px rgba(38, 53, 71, 0.08); }
+        .accounting-selected { color: var(--account-muted); font-size: 0.9rem; }
+        .accounting-grand-total { color: var(--account-green); font-size: clamp(1.35rem, 4vw, 1.75rem); font-weight: 900; direction: ltr; }
+        .accounting-pay { min-width: 220px; border: 0; border-radius: 12px; background: #19866a; color: #fff; box-shadow: 0 8px 18px rgba(25, 134, 106, 0.2); }
+        .accounting-pay:hover { background: #147457; }
+        .accounting-empty { grid-column: 1 / -1; padding: 48px 18px; border: 1px dashed #cbd6da; border-radius: 16px; background: rgba(255,255,255,0.72); color: var(--account-muted); text-align: center; }
+        @media (max-width: 700px) {
+            .accounting-header { padding: 13px 14px; }
+            .accounting-heading-icon { width: 40px; height: 40px; }
+            .accounting-heading p { display: none; }
+            .accounting-close { min-width: auto; padding-inline: 12px; }
+            .accounting-content { padding: 14px 12px 145px; }
+            .accounting-grid { grid-template-columns: 1fr; }
+            .accounting-footer { align-items: stretch; flex-direction: column; gap: 8px; padding: 10px 12px; }
+            .accounting-selected { display: none; }
+            .accounting-grand-total { text-align: center; font-size: 1.35rem; }
+            .accounting-pay { width: 100%; min-width: 0; }
+        }
         .revenue-screen {
             --revenue-ink: #263547;
             --revenue-muted: #748396;
@@ -380,10 +447,29 @@
         <button class="btn btn-secondary" onclick="window.closeModal('bulkModal')" style="width: 100%;">إلغاء</button>
     </dialog>
 
-    <dialog id="accountingModal" class="wide-modal">
-        <h2>المحاسبة الجماعية — الأجهزة غير المصفّرة</h2>
-        <div id="accountingList" class="modal-body"></div>
-        <button class="btn btn-danger" onclick="window.closeModal('accountingModal')" style="width: 100%;">إغلاق</button>
+    <dialog id="accountingModal" class="accounting-screen" aria-labelledby="accountingTitle">
+        <div class="accounting-layout">
+            <header class="accounting-header">
+                <div class="accounting-heading">
+                    <span class="accounting-heading-icon" aria-hidden="true"><svg class="ui-icon"><use href="#icon-clipboard"></use></svg></span>
+                    <div>
+                        <h2 id="accountingTitle">المحاسبة الجماعية</h2>
+                        <p>اختر الأجهزة والحسابات والمشتريات المطلوب دفعها</p>
+                    </div>
+                </div>
+                <button class="btn accounting-close" onclick="window.closeModal('accountingModal')">إغلاق <svg class="ui-icon" aria-hidden="true"><use href="#icon-close"></use></svg></button>
+            </header>
+            <main class="accounting-content">
+                <div id="accountingList" class="accounting-grid" aria-live="polite"></div>
+            </main>
+            <footer class="accounting-footer">
+                <div>
+                    <div class="accounting-selected" id="accountingSelectedCount">لم يتم تحديد حسابات</div>
+                    <div class="accounting-grand-total" id="accountingGrandTotal">0 د.ع</div>
+                </div>
+                <button class="btn accounting-pay" onclick="window.payAccountingSelection()"><svg class="ui-icon" aria-hidden="true"><use href="#icon-wallet"></use></svg>دفع المحدد وتصفير الأجهزة</button>
+            </footer>
+        </div>
     </dialog>
 
     <dialog id="revenueModal" class="revenue-screen" aria-labelledby="revenueTitle">
@@ -439,6 +525,7 @@
         let isMultiSelectMode = false;
         let selectedDeviceIds = new Set();
         let currentBillItems = [];
+        let accountingSelection = new Map();
         const pendingAccountWrites = new Set();
         const expiringDeviceIds = new Set();
 
@@ -933,6 +1020,7 @@
         function buildBillItems(device, now = Date.now()) {
             const items = (device.pastSessions || []).map((session, index) => ({
                 type: 'session',
+                key: `session:${index}`,
                 name: `جلسة من ${formatDateTime(session.startTime)} إلى ${formatDateTime(session.endTime)}`,
                 price: Number(session.price) || 0,
                 ...(session.startTime !== undefined ? { startTime: session.startTime } : {}),
@@ -940,7 +1028,7 @@
                 index
             }));
             if (Number(device.accumulatedTimePrice) > 0) {
-                items.push({ type: 'legacy', name: 'وقت متراكم سابق', price: Number(device.accumulatedTimePrice) });
+                items.push({ type: 'legacy', key: 'legacy', name: 'وقت متراكم سابق', price: Number(device.accumulatedTimePrice) });
             }
             if (device.startTime && (device.status === 'open' || device.status === 'timed')) {
                 const endTime = device.status === 'timed' && device.durationLimit
@@ -948,6 +1036,7 @@
                     : now;
                 items.push({
                     type: 'active',
+                    key: 'active',
                     name: `${device.status === 'timed' ? 'جلسة محددة' : 'جلسة مفتوحة'} — بدأت ${formatDateTime(device.status === 'open' ? getOpenSessionStartTime(device.startTime, device.startOffsetMinutes, device.freeTimeUntil) : device.startTime)}${device.status === 'timed' ? `، تنتهي ${formatDateTime(device.startTime + device.durationLimit * 60000)}` : ''}`,
                     price: calculateSessionPrice(device, now),
                     startTime: device.status === 'open'
@@ -957,7 +1046,7 @@
                 });
             }
             (device.purchases || []).forEach((purchase, index) => {
-                items.push({ type: 'purchase', name: purchase.name, price: Number(purchase.price) || 0, index });
+                items.push({ type: 'purchase', key: `purchase:${index}`, name: purchase.name, price: Number(purchase.price) || 0, index });
             });
             return items;
         }
@@ -1147,25 +1236,167 @@
             );
             const list = document.getElementById('accountingList');
             if (pendingDevices.length === 0) {
-                list.innerHTML = '<p style="text-align:center;">لا توجد أجهزة بحسابات معلّقة.</p>';
+                accountingSelection.clear();
+                list.innerHTML = '<div class="accounting-empty">لا توجد أجهزة بحسابات معلّقة.</div>';
+                updateAccountingTotal();
             } else {
+                accountingSelection = new Map();
+                pendingDevices.forEach(device => {
+                    const items = buildBillItems(device);
+                    accountingSelection.set(device.id, new Set(items.map(item => item.key)));
+                });
                 list.innerHTML = pendingDevices.map(device => {
                     const statusText = { vacant: 'شاغر', open: 'وقت مفتوح', timed: 'وقت محدد', locked: 'مقفل' }[device.status] || device.status;
                     const items = buildBillItems(device);
                     const total = items.reduce((sum, item) => sum + item.price, 0);
+                    const running = device.status === 'open' || device.status === 'timed';
+                    const stopped = device.status === 'locked';
                     const details = items.length
-                        ? items.map(item => `<div>${escapeHtml(item.name)} — <strong>${item.price} د.ع</strong></div>`).join('')
-                        : '<div>لا توجد مبالغ مسجلة حتى الآن.</div>';
-                    return `<section class="accounting-device">
-                        <strong>${escapeHtml(device.name)} (${escapeHtml(device.type)})</strong>
-                        <div>الحالة: ${escapeHtml(statusText)} | بداية الجلسة: ${formatFullDateTime(device.startTime)}</div>
-                        ${device.status === 'timed' && device.startTime && device.durationLimit ? `<div>نهاية الوقت المحدد: ${formatFullDateTime(device.startTime + device.durationLimit * 60000)}</div>` : ''}
-                        <div>${details}</div>
-                        <div style="color:var(--neon-yellow);font-weight:bold;">إجمالي الحساب: ${total} د.ع</div>
+                        ? items.map(item => `
+                            <label class="account-item">
+                                <input type="checkbox" ${running ? 'checked disabled' : 'checked'} onchange="window.toggleAccountingItem('${device.id}', '${item.key}', this.checked)">
+                                <span class="account-item-name">${escapeHtml(item.name)}</span>
+                                <span class="account-item-price">${item.price} د.ع</span>
+                            </label>
+                        `).join('')
+                        : '<div class="accounting-empty" style="padding:18px;">لا توجد مبالغ مسجلة حتى الآن.</div>';
+                    const modeText = running
+                        ? `${icon('stop')} إيقاف الجلسة ودفع الحساب وتصفير الجهاز`
+                        : stopped
+                            ? `${icon('lock')} الحساب متوقف — دفع وتصفير عند السداد`
+                            : `${icon('receipt')} دفع الحقول والمشتريات المحددة`;
+                    return `<section class="account-device-card ${running ? 'active' : ''}">
+                        <header class="account-device-header">
+                            <div class="account-device-name">${icon(device.type === 'PC' ? 'gamepad' : 'video')}<span>${escapeHtml(device.name)}</span></div>
+                            <span class="account-status ${running ? 'running' : stopped ? 'stopped' : ''}">${escapeHtml(statusText)}</span>
+                        </header>
+                        <div class="account-device-body">
+                            <div class="account-mode ${running ? 'running' : ''}">${modeText}</div>
+                            <div class="account-items">${details}</div>
+                            <div class="account-card-total"><span>إجمالي حساب الجهاز</span><strong>${total} د.ع</strong></div>
+                        </div>
                     </section>`;
                 }).join('');
+                updateAccountingTotal();
             }
             document.getElementById('accountingModal').showModal();
+        };
+
+        window.toggleAccountingItem = (deviceId, itemKey, checked) => {
+            const device = devices.find(item => item.id === deviceId);
+            if (!device || device.status === 'open' || device.status === 'timed') return;
+            if (!accountingSelection.has(deviceId)) accountingSelection.set(deviceId, new Set());
+            const selected = accountingSelection.get(deviceId);
+            checked ? selected.add(itemKey) : selected.delete(itemKey);
+            updateAccountingTotal();
+        };
+
+        function updateAccountingTotal() {
+            let selectedCount = 0;
+            let grandTotal = 0;
+            accountingSelection.forEach((selectedKeys, deviceId) => {
+                const device = devices.find(item => item.id === deviceId);
+                if (!device) return;
+                const items = buildBillItems(device);
+                items.forEach(item => {
+                    if (selectedKeys.has(item.key)) {
+                        selectedCount++;
+                        grandTotal += Number(item.price) || 0;
+                    }
+                });
+            });
+            document.getElementById('accountingSelectedCount').innerText =
+                selectedCount > 0 ? `تم تحديد ${selectedCount} بند للحساب` : 'لم يتم تحديد حسابات';
+            document.getElementById('accountingGrandTotal').innerText = `${grandTotal.toLocaleString('ar-IQ')} د.ع`;
+        }
+
+        window.payAccountingSelection = () => {
+            const deviceIds = [...accountingSelection.keys()].filter(deviceId =>
+                (accountingSelection.get(deviceId)?.size || 0) > 0
+            );
+            if (deviceIds.length === 0) return alert('اختر حساباً أو مشتريات لدفعها أولاً.');
+            if (deviceIds.some(deviceId => pendingAccountWrites.has(deviceId))) {
+                return alert('هناك عملية حساب جارية على أحد الأجهزة المحددة؛ انتظر اكتمالها ثم أعد المحاولة.');
+            }
+
+            const updates = {};
+            const now = Date.now();
+            let paidCount = 0;
+            let grandTotal = 0;
+
+            deviceIds.forEach(deviceId => {
+                const device = devices.find(item => item.id === deviceId);
+                if (!device) return;
+                if (pendingAccountWrites.has(deviceId)) return;
+                pendingAccountWrites.add(deviceId);
+
+                const selectedKeys = accountingSelection.get(deviceId) || new Set();
+                const items = buildBillItems(device, now);
+                const selectedItems = items.filter(item => selectedKeys.has(item.key));
+                if (selectedItems.length === 0) {
+                    pendingAccountWrites.delete(deviceId);
+                    return;
+                }
+
+                const amount = selectedItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+                paidCount += selectedItems.length;
+                grandTotal += amount;
+                updates[`revenueLog/${push(ref(db, 'revenueLog')).key}`] = {
+                    type: 'payment',
+                    deviceId: device.id,
+                    deviceName: device.name,
+                    deviceType: device.type,
+                    amount,
+                    revenueAmount: amount,
+                    timestamp: now,
+                    details: { items: selectedItems, paidAt: now, source: 'group_accounting' }
+                };
+
+                const running = device.status === 'open' || device.status === 'timed';
+                if (running) {
+                    updates[`devices/${device.id}/status`] = 'vacant';
+                    updates[`devices/${device.id}/startTime`] = null;
+                    updates[`devices/${device.id}/durationLimit`] = null;
+                    updates[`devices/${device.id}/freeTimeUntil`] = null;
+                    updates[`devices/${device.id}/startOffsetMinutes`] = 0;
+                    updates[`devices/${device.id}/accumulatedTimePrice`] = 0;
+                    updates[`devices/${device.id}/purchases`] = [];
+                    updates[`devices/${device.id}/pastSessions`] = [];
+                    return;
+                }
+
+                const remainingPastSessions = (device.pastSessions || []).filter((session, index) =>
+                    !selectedKeys.has(`session:${index}`)
+                );
+                const remainingPurchases = (device.purchases || []).filter((purchase, index) =>
+                    !selectedKeys.has(`purchase:${index}`)
+                );
+                const remainingAccumulated = selectedKeys.has('legacy')
+                    ? 0
+                    : (Number(device.accumulatedTimePrice) || 0);
+                const remainingItemsExist = remainingPastSessions.length > 0 ||
+                    remainingPurchases.length > 0 ||
+                    remainingAccumulated > 0;
+
+                updates[`devices/${device.id}/pastSessions`] = remainingPastSessions;
+                updates[`devices/${device.id}/purchases`] = remainingPurchases;
+                updates[`devices/${device.id}/accumulatedTimePrice`] = remainingAccumulated;
+                updates[`devices/${device.id}/status`] = remainingItemsExist ? (device.status || 'locked') : 'vacant';
+                updates[`devices/${device.id}/startTime`] = null;
+                updates[`devices/${device.id}/durationLimit`] = null;
+                updates[`devices/${device.id}/freeTimeUntil`] = null;
+                updates[`devices/${device.id}/startOffsetMinutes`] = 0;
+            });
+
+            if (paidCount === 0) return;
+            update(ref(db, '/'), updates).then(() => {
+                accountingSelection.clear();
+                window.closeModal('accountingModal');
+            }).catch(error => {
+                alert(`تعذر إتمام المحاسبة الجماعية: ${error.message}`);
+            }).finally(() => {
+                deviceIds.forEach(deviceId => pendingAccountWrites.delete(deviceId));
+            });
         };
 
         function formatRevenueDetails(entry) {
